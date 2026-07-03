@@ -12,7 +12,7 @@ function getInitialTheme() {
   if (saved && VALID.includes(saved)) return saved
 
   // Respect OS preference if no saved choice
-  if (window.matchMedia?.('(prefers-color-scheme: light)').matches) return 'light'
+  // if (window.matchMedia?.('(prefers-color-scheme: light)').matches) return 'light'
   return 'dark'
 }
 
