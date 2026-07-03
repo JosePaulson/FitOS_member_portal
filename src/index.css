@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Theme variables ─────────────────────────────────────────────────────
+   Applied to <html data-theme="dark|light">
+   Every component uses semantic tokens — never raw hex.
+   ────────────────────────────────────────────────────────────────────── */
+
+:root,
+[data-theme="dark"] {
+  --color-surface: #0d0d0d;
+  --color-surface-2: #161616;
+  --color-surface-3: #1f1f1f;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-strong: rgba(255, 255, 255, 0.16);
+  --color-primary: #f5f4ef;
+  --color-secondary: #888880;
+  --color-hint: rgba(255, 255, 255, 0.2);
+  --color-accent: #c8f135;
+
+  /* Component shorthands */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --glow-lime: rgba(200, 241, 53, 0.08);
+}
+
+[data-theme="light"] {
+  --color-surface: #f4f5f7;
+  --color-surface-2: #ffffff;
+  --color-surface-3: #ecedf0;
+  --color-border: rgba(0, 0, 0, 0.08);
+  --color-border-strong: rgba(0, 0, 0, 0.16);
+  --color-primary: #111111;
+  --color-secondary: #5a5a5a;
+  --color-hint: rgba(0, 0, 0, 0.28);
+  --color-accent: #8ab012; /* slightly deeper lime — readable on white */
+
+  --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  --glow-lime: rgba(138, 176, 18, 0.06);
+}
+
+/* ── Base ────────────────────────────────────────────────────────────────── */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    /* Smooth theme transitions — but skip on initial load via JS */
+    transition:
+      background-color 0.2s ease,
+      color 0.2s ease;
+  }
+  body {
+    background-color: var(--color-surface);
+    color: var(--color-primary);
+    @apply font-sans;
+  }
+  * {
+    @apply box-border;
+  }
+}
+
+/* ── Components ──────────────────────────────────────────────────────────── */
+@layer components {
+  .field-input {
+    width: 100%;
+    background: var(--color-surface-3);
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    color: var(--color-primary);
+    font-size: 0.875rem;
+    transition: border-color 0.15s;
+    outline: none;
+  }
+  .field-input::placeholder {
+    color: var(--color-hint);
+  }
+  .field-input:focus {
+    border-color: rgba(200, 241, 53, 0.4);
+  }
+
+  .card {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    box-shadow: var(--shadow-card);
+  }
+
+  .badge {
+    @apply inline-flex items-center text-[11px] font-semibold px-2.5 py-0.5 rounded-full;
+  }
+
+  /* Theme-aware divider */
+  .divider {
+    border-color: var(--color-border);
+  }
+}
+
+/* ── Scrollbar (dark mode only — looks bad in light) ─────────────────────── */
+[data-theme="dark"] ::-webkit-scrollbar {
+  width: 4px;
+}
+[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: transparent;
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+/* ── Theme transition helper ─────────────────────────────────────────────── */
+.no-transition * {
+  transition: none !important;
+}
