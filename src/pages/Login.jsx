@@ -3,10 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { useMemberAuth } from '../context/MemberAuthContext'
 import { ThemeToggle } from '../components/ui/Spinner'
 import { useThemeContext } from '../context/ThemeContext'
+import { useInstallPrompt } from '../context/InstallPromptContext'
+import InstallPrompt from '../components/InstallPrompt'
 
 export default function Login() {
   const { login } = useMemberAuth()
   const { isDark, toggle } = useThemeContext()
+  const { showBanner, showIOSBanner } = useInstallPrompt()
   const navigate = useNavigate()
 
   const [step, setStep] = useState(0)
@@ -36,7 +39,16 @@ export default function Login() {
 
   return (
     <div className="relative flex flex-col items-center justify-center min-h-screen px-6"
-      style={{ background: 'var(--color-surface)' }}>
+      style={{
+        background: 'var(--color-surface)',
+        // Reserve room at the bottom so the fixed install banner (when
+        // shown) never overlaps the "Sign in" button on shorter phones.
+        // Matches the banner's own footprint: ~16px gap above safe-area
+        // + ~150px banner height (icon row + full-width button + padding).
+        paddingBottom: (showBanner || showIOSBanner)
+          ? 'calc(env(safe-area-inset-bottom, 0px) + 190px)'
+          : undefined,
+      }}>
 
       {/* Theme toggle — top right */}
       <div className="absolute top-5 right-5">
@@ -134,6 +146,8 @@ export default function Login() {
           </form>
         </div>
       </div>
+
+      <InstallPrompt withTabBar={false} />
     </div>
   )
 }

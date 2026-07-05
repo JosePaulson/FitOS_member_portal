@@ -34,7 +34,7 @@ export default function Plans() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-xs tracking-widest uppercase" style={{ color: 'var(--color-secondary)' }}>Current plan</p>
-              <p className="mt-1 text-xl font-black" style={{ color: 'var(--color-primary)' }}>{member.currentPlan?.name || 'No active plan'}</p>
+              <p className="mt-1 text-xl font-black" style={{ color: 'var(--color-primary)' }}>{member.currentPlanId?.name || 'No active plan'}</p>
             </div>
             <Badge color={badgeColor}>{badgeLabel}</Badge>
           </div>

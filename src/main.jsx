@@ -3,16 +3,19 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { MemberAuthProvider } from './context/MemberAuthContext'
-import { ThemeProvider } from './context/ThemeContext'
+import { ThemeProvider }      from './context/ThemeContext'
+import { InstallPromptProvider } from './context/InstallPromptContext'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
       <ThemeProvider>
-        <MemberAuthProvider>
-          <App />
-        </MemberAuthProvider>
+        <InstallPromptProvider>
+          <MemberAuthProvider>
+            <App />
+          </MemberAuthProvider>
+        </InstallPromptProvider>
       </ThemeProvider>
     </BrowserRouter>
   </React.StrictMode>
