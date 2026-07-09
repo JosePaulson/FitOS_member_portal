@@ -6,6 +6,7 @@ import { portalApi, authApi } from '../api/index'
 import Spinner, { Badge, membershipBadge, ThemeToggle } from '../components/ui/Spinner'
 import { useInstallPrompt } from '../context/InstallPromptContext'
 import IOSInstallSheet from '../components/IOSInstallSheet'
+import { useNotifications } from '../context/NotificationContext'
 
 const DAYS   = ['S','M','T','W','T','F','S']
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -15,6 +16,8 @@ export default function Profile() {
   const { isDark, toggle }         = useThemeContext()
   const { canInstall, installed, isIOS, promptInstall } = useInstallPrompt()
   const [showIOSSheet, setShowIOSSheet] = useState(false)
+  const notifications = useNotifications()
+  const [notifLoading, setNotifLoading] = useState(false)
   const navigate                   = useNavigate()
 
   const [attendance,  setAttendance]  = useState([])
@@ -155,6 +158,46 @@ export default function Profile() {
         <div className="card p-5 flex items-center gap-2">
           <span style={{ color: S.accent }}>✓</span>
           <p className="text-xs" style={{ color: S.secondary }}>App installed</p>
+        </div>
+      )}
+
+      {/* ── Notifications ── */}
+      {notifications.supported && (
+        <div className="card p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold" style={{ color: S.primary }}>
+                🔔 Notifications
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: S.secondary }}>
+                {notifications.subscribed
+                  ? 'Alerts for plan updates, invoices and renewals'
+                  : notifications.permission === 'denied'
+                    ? 'Blocked — enable in browser settings'
+                    : 'Get alerted when your gym updates your plans'}
+              </p>
+            </div>
+            <button
+              onClick={async () => {
+                setNotifLoading(true)
+                if (notifications.subscribed) await notifications.unsubscribe()
+                else await notifications.subscribe()
+                setNotifLoading(false)
+              }}
+              disabled={notifLoading || notifications.permission === 'denied'}
+              className="text-xs font-bold px-3.5 py-2 rounded-lg transition-all disabled:opacity-50"
+              style={
+                notifications.subscribed
+                  ? { border: `1px solid ${S.border}`, color: S.secondary }
+                  : { background: S.accent, color: '#0D0D0D' }
+              }
+            >
+              {notifLoading ? '…' : notifications.subscribed ? 'Turn off' : 'Enable'}
+            </button>
+          </div>
+          {notifications.error && (
+            <p className="text-xs mt-3" style={{ color: '#f87171' }}>{notifications.error}</p>
+          )}
         </div>
       )}
 

@@ -7,12 +7,12 @@ const TABS = ['Workout', 'Diet', 'PT Sessions']
 export default function Workouts() {
   const [tab, setTab] = useState(0)
   return (
-    <div className="flex flex-col gap-5 px-5 py-6">
+    <div className="px-5 py-6 flex flex-col gap-5">
       <h1 className="text-xl font-bold tracking-tight" style={{ color: 'var(--color-primary)' }}>My programmes</h1>
-      <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
+      <div className="flex gap-1 rounded-xl p-1" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
         {TABS.map((t, i) => (
           <button key={t} onClick={() => setTab(i)}
-            className="flex-1 py-2 text-xs font-semibold transition-all rounded-lg"
+            className="flex-1 py-2 rounded-lg text-xs font-semibold transition-all"
             style={{ background: tab === i ? 'var(--color-accent)' : 'transparent', color: tab === i ? '#0D0D0D' : 'var(--color-secondary)' }}>
             {t}
           </button>
@@ -26,12 +26,12 @@ export default function Workouts() {
 }
 
 function WorkoutTab() {
-  const [plans, setPlans] = useState([])
+  const [plans, setPlans]   = useState([])
   const [loading, setLoading] = useState(true)
-  const [open, setOpen] = useState(null)
+  const [open, setOpen]     = useState(null)
 
   useEffect(() => {
-    portalApi.workoutPlans().then(({ data }) => setPlans(data)).catch(() => { }).finally(() => setLoading(false))
+    portalApi.workoutPlans().then(({ data }) => setPlans(data)).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
   if (loading) return <div className="flex justify-center py-10"><Spinner /></div>
@@ -42,14 +42,14 @@ function WorkoutTab() {
     <div className="flex flex-col gap-3">
       {plans.map((plan) => (
         <button key={plan._id} onClick={() => setOpen(plan)}
-          className="w-full p-5 text-left transition-all card"
+          className="card p-5 text-left w-full transition-all"
           onMouseEnter={(e) => e.currentTarget.style.borderColor = 'rgba(200,241,53,0.25)'}
           onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'}>
           <div className="flex items-start justify-between mb-2">
             <h3 className="font-bold" style={{ color: 'var(--color-primary)' }}>{plan.name}</h3>
-            <Badge color="lime">{plan.goal?.replace('-', ' ')}</Badge>
+            <Badge color="lime">{plan.goal?.replace('-',' ')}</Badge>
           </div>
-          {plan.description && <p className="mb-3 text-xs" style={{ color: 'var(--color-secondary)' }}>{plan.description}</p>}
+          {plan.description && <p className="text-xs mb-3" style={{ color: 'var(--color-secondary)' }}>{plan.description}</p>}
           <div className="flex gap-4 text-xs" style={{ color: 'var(--color-secondary)' }}>
             {plan.durationWeeks && <span>📅 {plan.durationWeeks} weeks</span>}
             {plan.days?.length > 0 && <span>💪 {plan.days.length} training days</span>}
@@ -67,18 +67,18 @@ function WorkoutDetail({ plan, onBack }) {
         style={{ color: 'var(--color-secondary)' }}>← Back to plans</button>
       <div>
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-primary)' }}>{plan.name}</h2>
-        {plan.description && <p className="mt-1 text-sm" style={{ color: 'var(--color-secondary)' }}>{plan.description}</p>}
-        <div className="flex gap-4 mt-3 text-xs" style={{ color: 'var(--color-secondary)' }}>
-          <span style={{ color: 'var(--color-accent)' }}>🎯 {plan.goal?.replace('-', ' ')}</span>
+        {plan.description && <p className="text-sm mt-1" style={{ color: 'var(--color-secondary)' }}>{plan.description}</p>}
+        <div className="flex gap-4 text-xs mt-3" style={{ color: 'var(--color-secondary)' }}>
+          <span style={{ color: 'var(--color-accent)' }}>🎯 {plan.goal?.replace('-',' ')}</span>
           {plan.durationWeeks && <span>📅 {plan.durationWeeks} weeks</span>}
         </div>
       </div>
       {plan.days?.length > 0 ? (
         <div className="flex flex-col gap-4">
           {plan.days.map((day, i) => (
-            <div key={i} className="p-5 card">
+            <div key={i} className="card p-5">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-bold" style={{ color: 'var(--color-primary)' }}>{day.day}</h3>
+                <h3 className="font-bold text-sm" style={{ color: 'var(--color-primary)' }}>{day.day}</h3>
                 {day.focus && (
                   <span className="text-xs px-2 py-0.5 rounded-full"
                     style={{ background: 'rgba(200,241,53,0.1)', color: 'var(--color-accent)' }}>{day.focus}</span>
@@ -109,12 +109,12 @@ function WorkoutDetail({ plan, onBack }) {
 }
 
 function DietTab() {
-  const [plans, setPlans] = useState([])
+  const [plans, setPlans]     = useState([])
   const [loading, setLoading] = useState(true)
-  const [open, setOpen] = useState(null)
+  const [open, setOpen]       = useState(null)
 
   useEffect(() => {
-    portalApi.dietPlans().then(({ data }) => setPlans(data)).catch(() => { }).finally(() => setLoading(false))
+    portalApi.dietPlans().then(({ data }) => setPlans(data)).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
   if (loading) return <div className="flex justify-center py-10"><Spinner /></div>
@@ -125,19 +125,19 @@ function DietTab() {
     <div className="flex flex-col gap-3">
       {plans.map((plan) => (
         <button key={plan._id} onClick={() => setOpen(plan)}
-          className="w-full p-5 text-left transition-all card"
+          className="card p-5 text-left w-full transition-all"
           onMouseEnter={(e) => e.currentTarget.style.borderColor = 'rgba(200,241,53,0.25)'}
           onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'}>
           <div className="flex items-start justify-between mb-2">
             <h3 className="font-bold" style={{ color: 'var(--color-primary)' }}>{plan.name}</h3>
-            <Badge color="lime">{plan.goal?.replace('-', ' ')}</Badge>
+            <Badge color="lime">{plan.goal?.replace('-',' ')}</Badge>
           </div>
-          {plan.description && <p className="mb-3 text-xs" style={{ color: 'var(--color-secondary)' }}>{plan.description}</p>}
+          {plan.description && <p className="text-xs mb-3" style={{ color: 'var(--color-secondary)' }}>{plan.description}</p>}
           <div className="flex flex-wrap gap-3 text-xs" style={{ color: 'var(--color-secondary)' }}>
             {plan.targetCalories && <span>🔥 {plan.targetCalories} kcal</span>}
-            {plan.targetProtein && <span>🥩 {plan.targetProtein}g protein</span>}
-            {plan.targetCarbs && <span>🍚 {plan.targetCarbs}g carbs</span>}
-            {plan.targetFat && <span>🥑 {plan.targetFat}g fat</span>}
+            {plan.targetProtein  && <span>🥩 {plan.targetProtein}g protein</span>}
+            {plan.targetCarbs    && <span>🍚 {plan.targetCarbs}g carbs</span>}
+            {plan.targetFat      && <span>🥑 {plan.targetFat}g fat</span>}
           </div>
         </button>
       ))}
@@ -152,22 +152,22 @@ function DietDetail({ plan, onBack }) {
         style={{ color: 'var(--color-secondary)' }}>← Back to diet plans</button>
       <div>
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-primary)' }}>{plan.name}</h2>
-        {plan.description && <p className="mt-1 text-sm" style={{ color: 'var(--color-secondary)' }}>{plan.description}</p>}
+        {plan.description && <p className="text-sm mt-1" style={{ color: 'var(--color-secondary)' }}>{plan.description}</p>}
       </div>
       {(plan.targetCalories || plan.targetProtein) && (
-        <div className="p-5 card">
-          <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>Daily targets</h3>
+        <div className="card p-5">
+          <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--color-primary)' }}>Daily targets</h3>
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: 'Calories', value: plan.targetCalories, unit: 'kcal', icon: '🔥' },
-              { label: 'Protein', value: plan.targetProtein, unit: 'g', icon: '🥩' },
-              { label: 'Carbs', value: plan.targetCarbs, unit: 'g', icon: '🍚' },
-              { label: 'Fat', value: plan.targetFat, unit: 'g', icon: '🥑' },
+              { label:'Calories', value:plan.targetCalories, unit:'kcal', icon:'🔥' },
+              { label:'Protein',  value:plan.targetProtein,  unit:'g',    icon:'🥩' },
+              { label:'Carbs',    value:plan.targetCarbs,    unit:'g',    icon:'🍚' },
+              { label:'Fat',      value:plan.targetFat,      unit:'g',    icon:'🥑' },
             ].filter((m) => m.value).map(({ label, value, unit, icon }) => (
               <div key={label}>
                 <span className="text-xs" style={{ color: 'var(--color-secondary)' }}>{icon} {label}</span>
                 <p className="font-bold" style={{ color: 'var(--color-primary)' }}>
-                  {value}<span className="ml-1 text-xs" style={{ color: 'var(--color-secondary)' }}>{unit}</span>
+                  {value}<span className="text-xs ml-1" style={{ color: 'var(--color-secondary)' }}>{unit}</span>
                 </p>
               </div>
             ))}
@@ -177,12 +177,12 @@ function DietDetail({ plan, onBack }) {
       {plan.meals?.length > 0 && (
         <div className="flex flex-col gap-3">
           {plan.meals.map((meal, i) => (
-            <div key={i} className="p-5 card">
+            <div key={i} className="card p-5">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-bold" style={{ color: 'var(--color-primary)' }}>{meal.name}</h3>
+                <h3 className="font-bold text-sm" style={{ color: 'var(--color-primary)' }}>{meal.name}</h3>
                 {meal.time && <span className="text-xs" style={{ color: 'var(--color-secondary)' }}>{meal.time}</span>}
               </div>
-              {meal.notes && <p className="mb-3 text-xs italic" style={{ color: 'var(--color-secondary)' }}>{meal.notes}</p>}
+              {meal.notes && <p className="text-xs mb-3 italic" style={{ color: 'var(--color-secondary)' }}>{meal.notes}</p>}
               {meal.items?.length > 0 && (
                 <div className="flex flex-col gap-1">
                   {meal.items.map((item, j) => (
@@ -190,7 +190,7 @@ function DietDetail({ plan, onBack }) {
                       style={{ borderTop: j === 0 ? 'none' : '1px solid var(--color-border)' }}>
                       <div>
                         <span style={{ color: 'var(--color-primary)' }}>{item.food}</span>
-                        {item.quantity && <span className="ml-2 text-xs" style={{ color: 'var(--color-secondary)' }}>{item.quantity}</span>}
+                        {item.quantity && <span className="text-xs ml-2" style={{ color: 'var(--color-secondary)' }}>{item.quantity}</span>}
                       </div>
                       {item.calories && <span className="text-xs" style={{ color: 'var(--color-secondary)' }}>{item.calories} kcal</span>}
                     </div>
@@ -208,24 +208,24 @@ function DietDetail({ plan, onBack }) {
 const PT_STATUS_COLOR = {
   scheduled: 'yellow',
   completed: 'lime',
-  missed: 'red',
+  missed:    'red',
   cancelled: 'muted',
 }
 const PT_STATUS_LABEL = {
   scheduled: 'Scheduled',
   completed: 'Completed',
-  missed: 'Missed',
+  missed:    'Missed',
   cancelled: 'Cancelled',
 }
 
 function PTTab() {
-  const [sessions, setSessions] = useState([])
-  const [progress, setProgress] = useState([])
-  const [stats, setStats] = useState({})
-  const [loading, setLoading] = useState(true)
-  const [selected, setSelected] = useState(null)
-  const [ackLoading, setAckLoading] = useState(null)
-  const [ackError, setAckError] = useState('')
+  const [sessions,    setSessions]    = useState([])
+  const [progress,    setProgress]    = useState([])
+  const [stats,       setStats]       = useState({})
+  const [loading,     setLoading]     = useState(true)
+  const [selected,    setSelected]    = useState(null)
+  const [ackLoading,  setAckLoading]  = useState(null)
+  const [ackError,    setAckError]    = useState('')
 
   async function load() {
     try {
@@ -263,14 +263,14 @@ function PTTab() {
 
   /* ── Session detail view ── */
   if (selected) {
-    const isPast = new Date(selected.date) <= new Date()
+    const isPast   = new Date(selected.date) <= new Date()
     const needsAck = !selected.acknowledgedByMember &&
-      selected.status !== 'cancelled' && isPast
+                     selected.status !== 'cancelled' && isPast
 
     return (
       <div className="flex flex-col gap-4 animate-fade-up">
         <button onClick={() => { setSelected(null); setAckError('') }}
-          className="flex items-center self-start gap-2 text-sm transition-colors"
+          className="flex items-center gap-2 text-sm transition-colors self-start"
           style={{ color: 'var(--color-secondary)' }}>
           ← Back to sessions
         </button>
@@ -281,7 +281,7 @@ function PTTab() {
             <h2 className="text-lg font-bold" style={{ color: 'var(--color-primary)' }}>
               {selected.title || 'PT Session'}
             </h2>
-            <p className="mt-1 text-xs" style={{ color: 'var(--color-secondary)' }}>
+            <p className="text-xs mt-1" style={{ color: 'var(--color-secondary)' }}>
               {new Date(selected.date).toLocaleDateString('en-IN', {
                 weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
               })}
@@ -301,7 +301,7 @@ function PTTab() {
 
         {/* Body metrics */}
         {(selected.bodyWeight || selected.bodyFat) && (
-          <div className="flex gap-8 p-4 card">
+          <div className="card p-4 flex gap-8">
             {selected.bodyWeight && (
               <div>
                 <p className="text-xs" style={{ color: 'var(--color-secondary)' }}>Body weight</p>
@@ -323,8 +323,8 @@ function PTTab() {
 
         {/* Exercises */}
         {selected.exercises?.length > 0 && (
-          <div className="p-4 card">
-            <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>Exercises</h3>
+          <div className="card p-4">
+            <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--color-primary)' }}>Exercises</h3>
             <div className="flex flex-col">
               {selected.exercises.map((ex, i) => (
                 <div key={i} className="flex items-center justify-between py-2.5"
@@ -336,8 +336,8 @@ function PTTab() {
                     )}
                   </div>
                   <div className="flex gap-2 text-xs" style={{ color: 'var(--color-secondary)' }}>
-                    {ex.sets && <span>{ex.sets} sets</span>}
-                    {ex.reps && <span>× {ex.reps}</span>}
+                    {ex.sets   && <span>{ex.sets} sets</span>}
+                    {ex.reps   && <span>× {ex.reps}</span>}
                     {ex.weight && (
                       <span className="font-semibold" style={{ color: 'var(--color-accent)' }}>
                         @ {ex.weight}kg
@@ -350,10 +350,59 @@ function PTTab() {
           </div>
         )}
 
+        {/* Equipment used in this session */}
+        {selected.equipment?.length > 0 && (
+          <div className="card p-4">
+            <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--color-primary)' }}>Equipment used</h3>
+            <div className="flex flex-wrap gap-2">
+              {selected.equipment.map((eq) => (
+                <div key={eq._id} className="flex items-center gap-2 rounded-lg pl-1.5 pr-3 py-1.5"
+                  style={{ background: 'var(--color-surface-3)' }}>
+                  <div className="w-7 h-7 rounded overflow-hidden flex items-center justify-center shrink-0"
+                    style={{ background: 'var(--color-surface-2)' }}>
+                    {eq.imageUrl
+                      ? <img src={eq.imageUrl} alt={eq.name} className="w-full h-full object-cover" />
+                      : <span className="text-xs">🏋️</span>
+                    }
+                  </div>
+                  <span className="text-xs font-medium" style={{ color: 'var(--color-primary)' }}>{eq.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Reference workouts — with photo or short demo video */}
+        {selected.workouts?.length > 0 && (
+          <div className="flex flex-col gap-3">
+            <h3 className="text-sm font-bold" style={{ color: 'var(--color-primary)' }}>Reference workouts</h3>
+            {selected.workouts.map((w) => (
+              <div key={w._id} className="card overflow-hidden">
+                {(w.videoUrl || w.imageUrl) && (
+                  <div className="aspect-video flex items-center justify-center overflow-hidden" style={{ background: 'var(--color-surface-3)' }}>
+                    {w.videoUrl
+                      ? <video src={w.videoUrl} className="w-full h-full object-cover" controls playsInline />
+                      : <img src={w.imageUrl} alt={w.name} className="w-full h-full object-cover" />
+                    }
+                  </div>
+                )}
+                <div className="p-3">
+                  <p className="text-sm font-semibold" style={{ color: 'var(--color-primary)' }}>{w.name}</p>
+                  {w.videoDurationSec && (
+                    <p className="text-[10px] mt-0.5" style={{ color: 'var(--color-secondary)' }}>
+                      ▶ {Math.round(w.videoDurationSec)}s demo
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Trainer notes */}
         {selected.notes && (
-          <div className="p-4 card">
-            <p className="mb-2 text-xs font-semibold" style={{ color: 'var(--color-secondary)' }}>
+          <div className="card p-4">
+            <p className="text-xs font-semibold mb-2" style={{ color: 'var(--color-secondary)' }}>
               Trainer notes
             </p>
             <p className="text-sm leading-relaxed" style={{ color: 'var(--color-primary)' }}>
@@ -364,7 +413,7 @@ function PTTab() {
 
         {/* Acknowledge / confirmed state */}
         {ackError && (
-          <div className="px-4 py-3 text-xs rounded-xl"
+          <div className="rounded-xl px-4 py-3 text-xs"
             style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.2)', color: '#f87171' }}>
             {ackError}
           </div>
@@ -391,7 +440,7 @@ function PTTab() {
             })}
           </div>
         ) : selected.status === 'cancelled' ? null : (
-          <div className="px-4 py-3 text-xs text-center rounded-xl"
+          <div className="rounded-xl px-4 py-3 text-xs text-center"
             style={{ background: 'var(--color-surface-3)', color: 'var(--color-secondary)' }}>
             This session is in the future — you can confirm attendance on the day.
           </div>
@@ -407,8 +456,8 @@ function PTTab() {
   )
 
   const bwVals = progress.map((p) => p.bodyWeight)
-  const bwMin = bwVals.length ? Math.min(...bwVals) : 0
-  const bwMax = bwVals.length ? Math.max(...bwVals) : 1
+  const bwMin  = bwVals.length ? Math.min(...bwVals) : 0
+  const bwMax  = bwVals.length ? Math.max(...bwVals) : 1
   const bwRange = bwMax - bwMin || 1
 
   return (
@@ -417,9 +466,9 @@ function PTTab() {
       <div className="grid grid-cols-2 gap-3">
         {[
           { label: 'Completed', value: stats.completed || 0, accent: true },
-          { label: 'Upcoming', value: stats.scheduled || 0, accent: false },
+          { label: 'Upcoming',  value: stats.scheduled || 0, accent: false },
         ].map(({ label, value, accent }) => (
-          <div key={label} className="p-4 text-center card">
+          <div key={label} className="card p-4 text-center">
             <p className="text-2xl font-black" style={{ color: accent ? 'var(--color-accent)' : 'var(--color-primary)' }}>
               {value}
             </p>
@@ -432,16 +481,16 @@ function PTTab() {
 
       {/* Body weight progress chart */}
       {progress.length > 1 && (
-        <div className="p-4 card">
-          <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>
+        <div className="card p-4">
+          <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--color-primary)' }}>
             Body weight progress
           </h3>
           <div className="flex items-end gap-1 h-14">
             {progress.map((p, i) => {
-              const pct = ((p.bodyWeight - bwMin) / bwRange) * 100
+              const pct  = ((p.bodyWeight - bwMin) / bwRange) * 100
               const barH = `${Math.max(10, pct)}%`
               return (
-                <div key={i} className="flex flex-col items-center flex-1 gap-1">
+                <div key={i} className="flex-1 flex flex-col items-center gap-1">
                   <span className="text-[9px] font-semibold" style={{ color: 'var(--color-accent)' }}>
                     {p.bodyWeight}
                   </span>
@@ -453,7 +502,7 @@ function PTTab() {
               )
             })}
           </div>
-          <div className="flex justify-between mt-2 text-xs" style={{ color: 'var(--color-secondary)' }}>
+          <div className="flex justify-between text-xs mt-2" style={{ color: 'var(--color-secondary)' }}>
             <span>Start: {progress[0].bodyWeight} kg</span>
             <span style={{ color: progress.at(-1).bodyWeight < progress[0].bodyWeight ? 'var(--color-accent)' : '#f87171', fontWeight: 600 }}>
               {progress.at(-1).bodyWeight < progress[0].bodyWeight ? '↓' : '↑'}{' '}
@@ -466,14 +515,14 @@ function PTTab() {
 
       {/* Session list */}
       <div>
-        <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>All sessions</h3>
+        <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--color-primary)' }}>All sessions</h3>
         <div className="flex flex-col gap-2">
           {sessions.map((s) => {
-            const isPast = new Date(s.date) <= new Date()
+            const isPast   = new Date(s.date) <= new Date()
             const needsAck = !s.acknowledgedByMember && s.status !== 'cancelled' && isPast
             return (
               <button key={s._id} onClick={() => { setSelected(s); setAckError('') }}
-                className="w-full p-4 text-left transition-all card"
+                className="card p-4 text-left w-full transition-all"
                 style={{ borderColor: needsAck ? 'rgba(251,191,36,0.35)' : 'var(--color-border)' }}
                 onMouseEnter={(e) => e.currentTarget.style.borderColor = 'rgba(200,241,53,0.25)'}
                 onMouseLeave={(e) => e.currentTarget.style.borderColor = needsAck ? 'rgba(251,191,36,0.35)' : 'var(--color-border)'}>
@@ -505,7 +554,7 @@ function PTTab() {
                   </div>
                 </div>
                 {s.bodyWeight && (
-                  <div className="flex gap-4 pt-2 mt-2 text-xs"
+                  <div className="flex gap-4 text-xs mt-2 pt-2"
                     style={{ borderTop: '1px solid var(--color-border)', color: 'var(--color-secondary)' }}>
                     <span>⚖️ {s.bodyWeight} kg</span>
                     {s.bodyFat && <span>🔥 {s.bodyFat}% fat</span>}

@@ -5,6 +5,7 @@ import App from './App'
 import { MemberAuthProvider } from './context/MemberAuthContext'
 import { ThemeProvider }      from './context/ThemeContext'
 import { InstallPromptProvider } from './context/InstallPromptContext'
+import { NotificationProvider }  from './context/NotificationContext'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -13,7 +14,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <ThemeProvider>
         <InstallPromptProvider>
           <MemberAuthProvider>
-            <App />
+            <NotificationProvider>
+              <App />
+            </NotificationProvider>
           </MemberAuthProvider>
         </InstallPromptProvider>
       </ThemeProvider>

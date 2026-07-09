@@ -6,6 +6,19 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      // injectManifest (rather than the default generateSW) lets us ship a
+      // hand-written service worker (src/sw.js) with custom `push` and
+      // `notificationclick` listeners, while vite-plugin-pwa still handles
+      // injecting the precache manifest into it at build time.
+      strategies: 'injectManifest',
+      srcDir:     'src',
+      filename:   'sw.js',
+      injectManifest: {
+        // Keep the precached asset list reasonably small — big media files
+        // (equipment/workout photos, videos) are loaded from the API and
+        // Cloudinary directly, not part of the app shell.
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+      },
       registerType: 'autoUpdate',
       includeAssets: ['apple-touch-icon.png'],
       manifest: {
@@ -24,18 +37,8 @@ export default defineConfig({
           { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
-      workbox: {
-        // Never cache API calls — always hit the network for fresh member data
-        navigateFallbackDenylist: [/^\/api\//],
-        runtimeCaching: [
-          {
-            urlPattern: /^\/api\/.*/,
-            handler: 'NetworkOnly',
-          },
-        ],
-      },
       devOptions: {
-        // Lets you test the install prompt during `npm run dev`
+        // Lets you test the install prompt + push notifications during `npm run dev`
         enabled: true,
         type: 'module',
       },
@@ -45,7 +48,7 @@ export default defineConfig({
     port: 5174,
     proxy: {
       '/api': {
-        target: 'https://fitos-server.onrender.com',
+        target: 'http://localhost:5000',
         changeOrigin: true,
       },
     },
