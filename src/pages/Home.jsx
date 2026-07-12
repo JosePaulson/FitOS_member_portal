@@ -4,23 +4,23 @@ import { useMemberAuth } from '../context/MemberAuthContext'
 import { portalApi } from '../api/index'
 import Spinner, { Badge, membershipBadge } from '../components/ui/Spinner'
 
-const MONTH_NAMES = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const MONTH_NAMES = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 function daysUntil(d) { return d ? Math.ceil((new Date(d) - new Date()) / 86400000) : null }
 function fmt(d) {
   if (!d) return '—'
-  return new Date(d).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })
+  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 export default function Home() {
   const { member, gym } = useMemberAuth()
-  const [summary,  setSummary]  = useState(null)
-  const [loading,  setLoading]  = useState(true)
+  const [summary, setSummary] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     Promise.all([portalApi.attendanceSummary(), portalApi.ptSessions()])
       .then(([a, p]) => setSummary({ attendance: a.data, pt: p.data }))
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false))
   }, [])
 
@@ -30,11 +30,11 @@ export default function Home() {
   const [badgeColor, badgeLabel] = membershipBadge(member.membershipStatus)
   const expiryWarning = member.membershipStatus === 'active' && days !== null && days <= 10
   const totalCheckins = summary?.attendance?.reduce((s, m) => s + m.count, 0) ?? 0
-  const ptTotal       = summary?.pt?.totalSessions ?? 0
-  const ptRemaining   = summary?.pt?.sessionsRemaining
+  const ptTotal = summary?.pt?.totalCompleted ?? 0
+  const ptRemaining = summary?.pt?.totalScheduled ?? 0
 
   return (
-    <div className="px-5 py-6 flex flex-col gap-6 animate-fade-up">
+    <div className="flex flex-col gap-6 px-5 py-6 animate-fade-up">
       {/* Greeting */}
       <div>
         <p className="text-sm" style={{ color: 'var(--color-secondary)' }}>{greeting()}</p>
@@ -44,13 +44,13 @@ export default function Home() {
       </div>
 
       {/* Membership card */}
-      <div className="relative rounded-2xl overflow-hidden p-6"
+      <div className="relative p-6 overflow-hidden rounded-2xl"
         style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-card)' }}>
-        <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full pointer-events-none"
+        <div className="absolute w-40 h-40 rounded-full pointer-events-none -top-10 -right-10"
           style={{ background: 'radial-gradient(circle, var(--glow-lime) 0%, transparent 70%)' }} />
         <div className="flex items-start justify-between mb-5">
           <div>
-            <p className="text-xs uppercase tracking-widest font-medium" style={{ color: 'var(--color-secondary)' }}>{gym?.name}</p>
+            <p className="text-xs font-medium tracking-widest uppercase" style={{ color: 'var(--color-secondary)' }}>{gym?.name}</p>
             <p className="font-bold text-lg mt-0.5" style={{ color: 'var(--color-primary)' }}>{member.currentPlanId?.name || 'No active plan'}</p>
           </div>
           <Badge color={badgeColor}>{badgeLabel}</Badge>
@@ -70,13 +70,13 @@ export default function Home() {
           </div>
         </div>
         {expiryWarning && (
-          <div className="mt-4 rounded-lg px-3 py-2 text-xs font-medium"
+          <div className="px-3 py-2 mt-4 text-xs font-medium rounded-lg"
             style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.2)', color: '#fbbf24' }}>
             ⏰ Expires in {days} day{days === 1 ? '' : 's'} — contact your gym to renew
           </div>
         )}
         {member.membershipStatus === 'expired' && (
-          <div className="mt-4 rounded-lg px-3 py-2 text-xs font-medium"
+          <div className="px-3 py-2 mt-4 text-xs font-medium rounded-lg"
             style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.2)', color: '#f87171' }}>
             ❌ Membership expired — contact your gym to renew
           </div>
@@ -88,46 +88,50 @@ export default function Home() {
         ? <div className="flex justify-center py-4"><Spinner size="sm" /></div>
         : (
           <div className="grid grid-cols-3 gap-3">
-            <StatCard icon="📅" label="Check-ins"   value={totalCheckins} sub="all time" />
-            <StatCard icon="💪" label="PT sessions" value={ptTotal}        sub="completed" />
+            <StatCard icon="📅" label="Check-ins" value={totalCheckins} sub="all time" />
+            <StatCard icon="💪" label="PT sessions" value={ptTotal} sub="completed" />
             {ptRemaining !== null
-              ? <StatCard icon="🎯" label="PT left"  value={ptRemaining}   sub="remaining" accent />
-              : <StatCard icon="🏅" label="Sessions" value={ptTotal}        sub="total" />
+              ? <Link to="/workouts" state={{ tab: 2 }}>
+                <StatCard icon="🎯" label="PT left" value={ptRemaining} sub="remaining" accent />
+              </Link>
+              : <StatCard icon="🏅" label="Sessions" value={ptTotal} sub="total" />
             }
           </div>
         )
       }
 
       {/* Monthly bar chart */}
-      {summary?.attendance?.length > 0 && (
-        <div className="card p-5">
-          <h2 className="text-sm font-bold mb-4" style={{ color: 'var(--color-primary)' }}>Monthly check-ins</h2>
-          <div className="flex items-end gap-2 h-20">
-            {[...summary.attendance].reverse().map((m) => {
-              const max = Math.max(...summary.attendance.map((x) => x.count))
-              const pct = Math.round((m.count / max) * 100)
-              return (
-                <div key={`${m._id.year}-${m._id.month}`} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-[10px] font-semibold" style={{ color: 'var(--color-accent)' }}>{m.count}</span>
-                  <div className="w-full rounded-t transition-all" style={{ height: `${pct}%`, minHeight: 4, background: 'rgba(200,241,53,0.3)' }} />
-                  <span className="text-[10px]" style={{ color: 'var(--color-secondary)' }}>{MONTH_NAMES[m._id.month]}</span>
-                </div>
-              )
-            })}
+      {
+        summary?.attendance?.length > 0 && (
+          <div className="p-5 card">
+            <h2 className="mb-4 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>Monthly check-ins</h2>
+            <div className="flex items-end h-20 gap-2">
+              {[...summary.attendance].reverse().map((m) => {
+                const max = Math.max(...summary.attendance.map((x) => x.count))
+                const pct = Math.round((m.count / max) * 100)
+                return (
+                  <div key={`${m._id.year}-${m._id.month}`} className="flex flex-col items-center flex-1 gap-1">
+                    <span className="text-[10px] font-semibold" style={{ color: 'var(--color-accent)' }}>{m.count}</span>
+                    <div className="w-full transition-all rounded-t" style={{ height: `${pct}%`, minHeight: 4, background: 'rgba(200,241,53,0.3)' }} />
+                    <span className="text-[10px]" style={{ color: 'var(--color-secondary)' }}>{MONTH_NAMES[m._id.month]}</span>
+                  </div>
+                )
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Quick links */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { to: '/billing',   icon: '🧾', label: 'Invoices' },
-          { to: '/workouts',  icon: '🏋️', label: 'Workouts' },
+          { to: '/billing', icon: '🧾', label: 'Invoices' },
+          { to: '/workouts', icon: '🏋️', label: 'Workouts' },
           { to: '/equipment', icon: '⚙️', label: 'Equipment' },
-          { to: '/chat',      icon: '💬', label: 'AI Coach' },
-          { to: '/bmi',       icon: '⚖️', label: 'BMI' },
-          { to: '/plans',     icon: '📋', label: 'Plans' },
-          { to: '/profile',   icon: '👤', label: 'Profile' },
+          { to: '/chat', icon: '💬', label: 'AI Coach' },
+          { to: '/bmi', icon: '⚖️', label: 'BMI' },
+          { to: '/plans', icon: '📋', label: 'Plans' },
+          { to: '/profile', icon: '👤', label: 'Profile' },
         ].map((l) => (
           <Link key={l.to} to={l.to}
             className="card p-3 flex flex-col items-center gap-1.5 text-center transition-all"
@@ -140,13 +144,13 @@ export default function Home() {
           </Link>
         ))}
       </div>
-    </div>
+    </div >
   )
 }
 
 function StatCard({ icon, label, value, sub, accent }) {
   return (
-    <div className="card p-4 flex flex-col gap-1"
+    <div className="flex flex-col gap-1 p-4 card"
       style={{ ...(accent ? { borderColor: 'rgba(200,241,53,0.2)', background: 'rgba(200,241,53,0.05)' } : {}) }}>
       <span className="text-xl">{icon}</span>
       <span className="text-2xl font-black tracking-tight"

@@ -11,8 +11,8 @@ export default defineConfig({
       // `notificationclick` listeners, while vite-plugin-pwa still handles
       // injecting the precache manifest into it at build time.
       strategies: 'injectManifest',
-      srcDir:     'src',
-      filename:   'sw.js',
+      srcDir: 'src',
+      filename: 'sw.js',
       injectManifest: {
         // Keep the precached asset list reasonably small — big media files
         // (equipment/workout photos, videos) are loaded from the API and
@@ -24,7 +24,7 @@ export default defineConfig({
       manifest: {
         name: 'FitOS Member Portal',
         short_name: 'FitOS',
-        description: 'View your membership, plans, invoices and workout schedule.',
+        description: 'View your membership, plans, pt-sessions, diet plans, invoices and workout schedule.',
         theme_color: '#0D0D0D',
         background_color: '#0D0D0D',
         display: 'standalone',
