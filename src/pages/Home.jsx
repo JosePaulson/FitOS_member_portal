@@ -88,7 +88,9 @@ export default function Home() {
         ? <div className="flex justify-center py-4"><Spinner size="sm" /></div>
         : (
           <div className="grid grid-cols-3 gap-3">
-            <StatCard icon="📅" label="Check-ins" value={totalCheckins} sub="all time" />
+            <Link to="/profile#attendance" preventScrollReset={true}>
+              <StatCard icon="📅" label="Check-ins" value={totalCheckins + ptTotal} sub="all time" />
+            </Link>
             <StatCard icon="💪" label="PT sessions" value={ptTotal} sub="completed" />
             {ptRemaining !== null
               ? <Link to="/workouts" state={{ tab: 2 }}>
@@ -127,7 +129,7 @@ export default function Home() {
         {[
           { to: '/billing', icon: '🧾', label: 'Invoices' },
           { to: '/workouts', icon: '🏋️', label: 'Workouts' },
-          { to: '/equipment', icon: '⚙️', label: 'Equipment' },
+          { to: '/equipment', icon: '🏋🏽‍♂️', label: 'Equipment' },
           { to: '/chat', icon: '💬', label: 'AI Coach' },
           { to: '/bmi', icon: '⚖️', label: 'BMI' },
           { to: '/plans', icon: '📋', label: 'Plans' },
