@@ -30,6 +30,18 @@ export const portalApi = {
   workoutPlan: (id) => api.get(`/member-portal/workout-plans/${id}`),
   dietPlans: () => api.get('/member-portal/diet-plans'),
   dietPlan: (id) => api.get(`/member-portal/diet-plans/${id}`),
+
+  // AI food scanner — "Scan Meal"
+  scanMeal: (file) => {
+    const form = new FormData()
+    form.append('image', file)
+    return api.post('/member-portal/food-scan', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  foodScanHistory: (params = {}) => api.get('/member-portal/food-scan', { params }),
+  foodScan: (id) => api.get(`/member-portal/food-scan/${id}`),
+  deleteFoodScan: (id) => api.delete(`/member-portal/food-scan/${id}`),
 }
 
 export const chatApi = {

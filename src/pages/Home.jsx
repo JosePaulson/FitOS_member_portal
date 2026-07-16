@@ -146,7 +146,20 @@ export default function Home() {
           </Link>
         ))}
       </div>
+
+      {/* Floating "Scan Meal" shortcut — jumps to Diet tab with the AI scanner already open */}
+      {/* <div className="z-30 w-full max-w-md -translate-x-1/2 pointer-events-none stic bottom-24 left-1/2">
+        <div className="flex justify-end pr-5">
+          <Link to="/workouts" state={{ tab: 1, openScanner: true }}
+            aria-label="Scan meal"
+            className="flex items-center justify-center transition-transform rounded-full pointer-events-auto w-14 h-14 active:scale-95"
+            style={{ background: 'var(--color-accent)', color: '#0D0D0D', boxShadow: '0 8px 24px rgba(200,241,53,0.35)' }}>
+            <span className="text-2xl">📷</span>
+          </Link>
+        </div>
+      </div> */}
     </div >
+
   )
 }
 

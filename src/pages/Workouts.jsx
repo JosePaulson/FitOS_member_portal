@@ -1,16 +1,22 @@
 import { useEffect, useState, useMemo } from 'react'
 import { portalApi } from '../api/index'
 import Spinner, { EmptyState, Badge } from '../components/ui/Spinner'
+import FoodScannerModal from '../components/FoodScanner'
 import { useLocation } from 'react-router-dom'
+import RecentScans from '../components/RecentScans'
 
 const TABS = ['Workout', 'Diet', 'PT Sessions']
 
 export default function Workouts() {
   const [tab, setTab] = useState(0)
+  const [pendingSessionId, setPendingSessionId] = useState(null)
+  const [autoOpenScanner, setAutoOpenScanner] = useState(false)
   const { state } = useLocation()
 
   useEffect(() => {
-    if (state?.tab) setTab(state.tab)
+    if (state?.tab !== undefined) setTab(state.tab)
+    if (state?.sessionId) setPendingSessionId(state.sessionId)
+    if (state?.openScanner) setAutoOpenScanner(true)
   }, [state])
   return (
     <div className="flex flex-col gap-5 px-5 py-6">
@@ -25,8 +31,18 @@ export default function Workouts() {
         ))}
       </div>
       {tab === 0 && <WorkoutTab />}
-      {tab === 1 && <DietTab />}
-      {tab === 2 && <PTTab />}
+      {tab === 1 && (
+        <DietTab
+          autoOpenScanner={autoOpenScanner}
+          onConsumedAutoOpen={() => setAutoOpenScanner(false)}
+        />
+      )}
+      {tab === 2 && (
+        <PTTab
+          initialSessionId={pendingSessionId}
+          onConsumedInitialSession={() => setPendingSessionId(null)}
+        />
+      )}
     </div>
   )
 }
@@ -114,40 +130,89 @@ function WorkoutDetail({ plan, onBack }) {
   )
 }
 
-function DietTab() {
+function DietTab({ autoOpenScanner, onConsumedAutoOpen }) {
   const [plans, setPlans] = useState([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(null)
+  const [showScanner, setShowScanner] = useState(false)
+  const [scans, setScans] = useState([])
+  const [scansLoading, setScansLoading] = useState(true)
+
+  function loadScans() {
+    setScansLoading(true)
+    portalApi.foodScanHistory({ limit: 10 })
+      .then(({ data }) => setScans(data.scans || []))
+      .catch(() => { })
+      .finally(() => setScansLoading(false))
+  }
 
   useEffect(() => {
     portalApi.dietPlans().then(({ data }) => setPlans(data)).catch(() => { }).finally(() => setLoading(false))
+    loadScans()
   }, [])
 
+  // Deep link from the Home screen's floating "Scan Meal" button
+  useEffect(() => {
+    if (autoOpenScanner) {
+      setShowScanner(true)
+      onConsumedAutoOpen?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenScanner])
+
   if (loading) return <div className="flex justify-center py-10"><Spinner /></div>
-  if (plans.length === 0) return <EmptyState icon="🥗" title="No diet plans yet" sub="Your trainer will assign a diet plan here." />
   if (open) return <DietDetail plan={open} onBack={() => setOpen(null)} />
 
   return (
-    <div className="flex flex-col gap-3">
-      {plans.map((plan) => (
-        <button key={plan._id} onClick={() => setOpen(plan)}
-          className="w-full p-5 text-left transition-all card"
-          onMouseEnter={(e) => e.currentTarget.style.borderColor = 'rgba(200,241,53,0.25)'}
-          onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'}>
-          <div className="flex items-start justify-between mb-2">
-            <h3 className="font-bold" style={{ color: 'var(--color-primary)' }}>{plan.name}</h3>
-            <Badge color="lime">{plan.goal?.replace('-', ' ')}</Badge>
-          </div>
-          {plan.description && <p className="mb-3 text-xs" style={{ color: 'var(--color-secondary)' }}>{plan.description}</p>}
-          <div className="flex flex-wrap gap-3 text-xs" style={{ color: 'var(--color-secondary)' }}>
-            {plan.targetCalories && <span>🔥 {plan.targetCalories} kcal</span>}
-            {plan.targetProtein && <span>🥩 {plan.targetProtein}g protein</span>}
-            {plan.targetCarbs && <span>🍚 {plan.targetCarbs}g carbs</span>}
-            {plan.targetFat && <span>🥑 {plan.targetFat}g fat</span>}
-          </div>
+    <div className="flex flex-col gap-5">
+      {/* ── Scan Meal ── */}
+      <div className="flex flex-col gap-3">
+        <button onClick={() => setShowScanner(true)}
+          className="w-full font-bold py-3.5 rounded-xl text-sm transition-all"
+          style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
+          📸 Scan a Meal
         </button>
-      ))}
-    </div>
+        <p className="text-[11px] text-center -mt-1" style={{ color: 'var(--color-secondary)' }}>
+          AI-estimated calories are approximate — see disclaimer after each scan.
+        </p>
+      </div>
+      {showScanner && (
+        <FoodScannerModal onClose={() => setShowScanner(false)} onSaved={loadScans} />
+      )}
+
+      {/* ── Recent scans ── */}
+      <RecentScans scans={scans} scansLoading={scansLoading} />
+
+
+      {/* ── Assigned diet plans ── */}
+      <div>
+        <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>My diet plans</h3>
+        {plans.length === 0 ? (
+          <EmptyState icon="🥗" title="No diet plans yet" sub="Your trainer will assign a diet plan here." />
+        ) : (
+          <div className="flex flex-col gap-3">
+            {plans.map((plan) => (
+              <button key={plan._id} onClick={() => setOpen(plan)}
+                className="w-full p-5 text-left transition-all card"
+                onMouseEnter={(e) => e.currentTarget.style.borderColor = 'rgba(200,241,53,0.25)'}
+                onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'}>
+                <div className="flex items-start justify-between mb-2">
+                  <h3 className="font-bold" style={{ color: 'var(--color-primary)' }}>{plan.name}</h3>
+                  <Badge color="lime">{plan.goal?.replace('-', ' ')}</Badge>
+                </div>
+                {plan.description && <p className="mb-3 text-xs" style={{ color: 'var(--color-secondary)' }}>{plan.description}</p>}
+                <div className="flex flex-wrap gap-3 text-xs" style={{ color: 'var(--color-secondary)' }}>
+                  {plan.targetCalories && <span>🔥 {plan.targetCalories} kcal</span>}
+                  {plan.targetProtein && <span>🥩 {plan.targetProtein}g protein</span>}
+                  {plan.targetCarbs && <span>🍚 {plan.targetCarbs}g carbs</span>}
+                  {plan.targetFat && <span>🥑 {plan.targetFat}g fat</span>}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div >
   )
 }
 
@@ -228,7 +293,7 @@ const PT_STATUS_LABEL = {
   declined: 'Declined',
 }
 
-function PTTab() {
+function PTTab({ initialSessionId, onConsumedInitialSession }) {
   const [sessions, setSessions] = useState([])
   const [progress, setProgress] = useState([])
   const [stats, setStats] = useState({})
@@ -257,6 +322,25 @@ function PTTab() {
   }
 
   useEffect(() => { load() }, [])
+
+  // Deep link from the attendance calendar — open the specific PT session
+  // that was tapped, once the session list has finished loading.
+  useEffect(() => {
+    if (!initialSessionId || loading) return
+    const found = sessions.find((s) => s._id === initialSessionId)
+    if (found) {
+      setSelected(found)
+      onConsumedInitialSession?.()
+    } else {
+      // Not in the first page of results (or older than the load limit) —
+      // fetch it directly so the deep link still works.
+      portalApi.ptSession(initialSessionId)
+        .then(({ data }) => setSelected(data))
+        .catch(() => { })
+        .finally(() => onConsumedInitialSession?.())
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSessionId, loading])
 
   async function acknowledge(sessionId) {
     setAckLoading(sessionId)
