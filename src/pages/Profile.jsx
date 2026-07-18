@@ -8,6 +8,17 @@ import { useInstallPrompt } from '../context/InstallPromptContext'
 import IOSInstallSheet from '../components/IOSInstallSheet'
 import { useNotifications } from '../context/NotificationContext'
 import { useAnchorScroll } from '../hooks/useAnchorScroll'
+import { readCache, writeCache } from '../lib/offline'
+
+// Calendar-day key from a Date's LOCAL date parts — NOT toISOString(), which
+// gives the UTC date and silently shifts anything before ~5:30am IST onto
+// the previous day, causing the calendar to bucket sessions/logs on the
+// wrong cell (and, historically, showed a constant "5:30am" whenever a
+// date-only value got round-tripped through UTC and re-displayed in IST).
+function localDateKey(d) {
+  const dt = new Date(d)
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+}
 
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -21,14 +32,21 @@ export default function Profile() {
   const [notifLoading, setNotifLoading] = useState(false)
   const navigate = useNavigate()
 
-  const [attendance, setAttendance] = useState([])
-  const [streak, setStreak] = useState(0)
-  const [ptSessionsByDate, setPtSessionsByDate] = useState(new Map())
-  const [loading, setLoading] = useState(true)
   const [viewMonth, setViewMonth] = useState(() => {
     const n = new Date()
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`
   })
+  const [attendance, setAttendance] = useState(() => readCache(`profile:attendance:${viewMonth}`)?.attendance ?? [])
+  const [streak, setStreak] = useState(() => readCache(`profile:attendance:${viewMonth}`)?.streak ?? 0)
+  const [ptSessionsByDate, setPtSessionsByDate] = useState(() => {
+    const cached = readCache(`profile:attendance:${viewMonth}`)
+    return cached ? new Map(cached.ptEntries) : new Map()
+  })
+  const [workoutLogsByDate, setWorkoutLogsByDate] = useState(() => {
+    const cached = readCache(`profile:attendance:${viewMonth}`)
+    return cached ? new Map(cached.logEntries || []) : new Map()
+  })
+  const [loading, setLoading] = useState(() => readCache(`profile:attendance:${viewMonth}`) === null)
 
   const [showPin, setShowPin] = useState(false)
   const [pinForm, setPinForm] = useState({ currentPin: '', newPin: '', confirmPin: '' })
@@ -91,33 +109,62 @@ export default function Profile() {
   }
 
   useEffect(() => {
-    setLoading(true)
-    const [y, m] = viewMonth.split('-').map(Number)
-    const from = `${y}-${String(m).padStart(2, '0')}-01`
-    const to = `${y}-${String(m).padStart(2, '0')}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+    // Show whatever's cached for this month immediately (may be empty on
+    // first-ever view of a month), then refresh from the server.
+    const cached = readCache(`profile:attendance:${viewMonth}`)
+    setAttendance(cached?.attendance ?? [])
+    setStreak(cached?.streak ?? 0)
+    setPtSessionsByDate(cached ? new Map(cached.ptEntries) : new Map())
+    setWorkoutLogsByDate(cached ? new Map(cached.logEntries || []) : new Map())
+    setLoading(cached === null)
 
-    Promise.all([
-      portalApi.attendance({ month: viewMonth }),
-      // "Confirmed" PTs — scheduled (trainer-confirmed) or completed;
-      // pending requests and declined/cancelled ones don't count.
-      portalApi.ptSessions({ from, to, limit: 100 }),
-    ])
-      .then(([attRes, ptRes]) => {
-        setAttendance(attRes.data.records)
-        setStreak(attRes.data.streak)
-        const confirmed = (ptRes.data.sessions || []).filter((s) => ['scheduled', 'completed'].includes(s.status))
-        const map = new Map()
-        for (const s of confirmed) {
-          const key = new Date(s.date).toISOString().split('T')[0]
-          const existing = map.get(key)
-          // Prefer the session that actually has a body weight recorded,
-          // so the calendar can show it under the date.
-          if (!existing || (!existing.bodyWeight && s.bodyWeight)) map.set(key, s)
-        }
-        setPtSessionsByDate(map)
-      })
-      .catch(() => { })
-      .finally(() => setLoading(false))
+    function load() {
+      const [y, m] = viewMonth.split('-').map(Number)
+      const from = `${y}-${String(m).padStart(2, '0')}-01`
+      const to = `${y}-${String(m).padStart(2, '0')}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+
+      Promise.all([
+        portalApi.attendance({ month: viewMonth }),
+        // "Confirmed" PTs — scheduled (trainer-confirmed) or completed;
+        // pending requests and declined/cancelled ones don't count.
+        portalApi.ptSessions({ from, to, limit: 100 }),
+        portalApi.workoutLogs({ from, to, limit: 100 }),
+      ])
+        .then(([attRes, ptRes, logsRes]) => {
+          const records = attRes.data.records
+          const streakVal = attRes.data.streak
+          const confirmed = (ptRes.data.sessions || []).filter((s) => ['scheduled', 'completed'].includes(s.status))
+          const ptMap = new Map()
+          for (const s of confirmed) {
+            const key = localDateKey(s.date)
+            const existing = ptMap.get(key)
+            // Prefer the session that actually has a body weight recorded,
+            // so the calendar can show it under the date.
+            if (!existing || (!existing.bodyWeight && s.bodyWeight)) ptMap.set(key, s)
+          }
+          const logMap = new Map()
+          for (const log of logsRes.data.logs || []) {
+            const key = localDateKey(log.date)
+            if (!logMap.has(key)) logMap.set(key, log) // most recent log that day (logs already sorted desc)
+          }
+          setAttendance(records)
+          setStreak(streakVal)
+          setPtSessionsByDate(ptMap)
+          setWorkoutLogsByDate(logMap)
+          writeCache(`profile:attendance:${viewMonth}`, {
+            attendance: records,
+            streak: streakVal,
+            ptEntries: [...ptMap.entries()],
+            logEntries: [...logMap.entries()],
+          })
+        })
+        .catch(() => { /* offline / server error — keep showing cached data above */ })
+        .finally(() => setLoading(false))
+    }
+
+    load()
+    window.addEventListener('online', load)
+    return () => window.removeEventListener('online', load)
   }, [viewMonth])
 
   async function handleChangePin(e) {
@@ -144,10 +191,10 @@ export default function Profile() {
 
   // Calendar helpers
   const [calYear, calMonth] = viewMonth.split('-').map(Number)
-  const attendedDates = new Set(attendance.map((r) => new Date(r.date).toISOString().split('T')[0]))
+  const attendedDates = new Set(attendance.map((r) => localDateKey(r.date)))
   const firstDay = new Date(calYear, calMonth - 1, 1).getDay()
   const daysInMonth = new Date(calYear, calMonth, 0).getDate()
-  const today = new Date().toISOString().split('T')[0]
+  const today = localDateKey(new Date())
 
   function prevMonth() {
     const d = new Date(calYear, calMonth - 2, 1)
@@ -348,21 +395,33 @@ export default function Profile() {
               const ptSession = ptSessionsByDate.get(dateStr)
               const ptSessionStatus = ptSessionsByDate.get(dateStr)?.status
               const hasPT = !!ptSession
+              const workoutLog = workoutLogsByDate.get(dateStr)
+              const hasLog = !!workoutLog
               const isToday = dateStr === today
+
+              // A day can have both a PT session and a self-logged workout —
+              // clicking goes to whichever is more specific (PT first, since
+              // that's an appointment; falls back to the log otherwise).
+              const goTo = hasPT
+                ? () => navigate('/workouts', { state: { tab: 2, sessionId: ptSession._id } })
+                : hasLog
+                  ? () => navigate('/workouts', { state: { tab: 0, openLogId: workoutLog._id } })
+                  : undefined
+
               return (
                 <div key={day}
-                  onClick={hasPT ? () => navigate('/workouts', { state: { tab: 2, sessionId: ptSession._id } }) : undefined}
-                  role={hasPT ? 'button' : undefined}
-                  tabIndex={hasPT ? 0 : undefined}
-                  onKeyDown={hasPT ? (e) => { if (e.key === 'Enter') navigate('/workouts', { state: { tab: 2, sessionId: ptSession._id } }) } : undefined}
+                  onClick={goTo}
+                  role={goTo ? 'button' : undefined}
+                  tabIndex={goTo ? 0 : undefined}
+                  onKeyDown={goTo ? (e) => { if (e.key === 'Enter') goTo() } : undefined}
                   className="relative aspect-square flex flex-col items-center justify-center gap-0.5 rounded-lg text-xs font-medium transition-all"
                   style={{
-                    cursor: hasPT ? 'pointer' : 'default',
-                    background: attended ? S.accent : hasPT ? ptSessionStatus === 'completed' ? '#9333ea66' : '#9333' : 'transparent',
+                    cursor: goTo ? 'pointer' : 'default',
+                    background: attended ? S.accent : hasPT ? (ptSessionStatus === 'completed' ? '#9333ea66' : '#92400eaa') : 'transparent',
                     color: attended ? '#0D0D0D' : hasPT ? '#fafafa'
                       : isToday ? S.accent
                         : S.hint,
-                    border: attended ? '1px solid transparent' : hasPT ? `1px solid #9333ea33`
+                    border: attended ? '1px solid transparent' : hasPT ? `1px solid #9333ea55`
                       : isToday ? `1px solid ${S.accent}`
                         : '1px solid transparent',
                     fontWeight: attended ? 700 : 400,
@@ -376,8 +435,7 @@ export default function Profile() {
                   )}
                   {hasPT && (
                     <span
-                      className="absolute -top-0 -right-0.5 w-3.5 h-3.5 rounded-xl flex items-center justify-center text-[5.5px] font-bold leading-none"
-                      style={{ background: `${S.surface}`, color: '#fff', border: `1px solid cream` }}
+                      className="absolute -top-0 -right-0 w-3.5 h-3.5 rounded-bl-full rounded-tr-[10px] flex items-center justify-center text-[5.5px] font-bold leading-none text-[#fafafa]"
                       title="PT session"
                     >
                       PT
@@ -396,14 +454,14 @@ export default function Profile() {
           {ptSessionsByDate.size} PT session{ptSessionsByDate.size !== 1 ? 's' : ''} this month · tap a PT day to view details
         </p>
         <div className="flex items-center justify-center gap-4 mt-2">
-          <span className="flex gap-1.5 text-[10px]" style={{ color: S.secondary }}>
+          <span className="flex items-center gap-1.5 text-[10px]" style={{ color: S.secondary }}>
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: S.accent }} /> Attendance
           </span>
-          <span className="flex gap-1.5 text-[10px]" style={{ color: S.secondary }}>
-            <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#9333ea' }} /> PT session
+          <span className="flex items-center gap-1.5 text-[10px]" style={{ color: S.secondary }}>
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#9333ea66' }} /> Completed PT
           </span>
-          <span className="flex gap-1.5 text-[10px]" style={{ color: S.secondary }}>
-            <span className="w-2.5 h-2.5 rounded-full bg-[#9333]" /> Scheduled PT
+          <span className="flex items-center gap-1.5 text-[10px]" style={{ color: S.secondary }}>
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#92400eaa', border: '1px solid #92400eaa' }} /> Scheduled PT
           </span>
         </div>
       </div>

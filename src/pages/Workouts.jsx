@@ -4,18 +4,23 @@ import Spinner, { EmptyState, Badge } from '../components/ui/Spinner'
 import FoodScannerModal from '../components/FoodScanner'
 import { useLocation } from 'react-router-dom'
 import RecentScans from '../components/RecentScans'
+import { WorkoutLogFormModal, WorkoutLogDetail } from '../components/WorkoutLogForm'
+import BodyWeightChart from '../components/BodyWeightChart'
+import { readCache, writeCache } from '../lib/offline'
 
 const TABS = ['Workout', 'Diet', 'PT Sessions']
 
 export default function Workouts() {
   const [tab, setTab] = useState(0)
   const [pendingSessionId, setPendingSessionId] = useState(null)
+  const [pendingLogId, setPendingLogId] = useState(null)
   const [autoOpenScanner, setAutoOpenScanner] = useState(false)
   const { state } = useLocation()
 
   useEffect(() => {
     if (state?.tab !== undefined) setTab(state.tab)
     if (state?.sessionId) setPendingSessionId(state.sessionId)
+    if (state?.openLogId) setPendingLogId(state.openLogId)
     if (state?.openScanner) setAutoOpenScanner(true)
   }, [state])
   return (
@@ -30,7 +35,12 @@ export default function Workouts() {
           </button>
         ))}
       </div>
-      {tab === 0 && <WorkoutTab />}
+      {tab === 0 && (
+        <WorkoutTab
+          initialLogId={pendingLogId}
+          onConsumedInitialLog={() => setPendingLogId(null)}
+        />
+      )}
       {tab === 1 && (
         <DietTab
           autoOpenScanner={autoOpenScanner}
@@ -47,37 +57,145 @@ export default function Workouts() {
   )
 }
 
-function WorkoutTab() {
+function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
   const [plans, setPlans] = useState([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(null)
 
+  const [logs, setLogs] = useState([])
+  const [weightPoints, setWeightPoints] = useState([])
+  const [logsLoading, setLogsLoading] = useState(true)
+  const [showLogForm, setShowLogForm] = useState(false)
+  const [editingLog, setEditingLog] = useState(null)
+  const [openLog, setOpenLog] = useState(null)
+
+  function loadLogs() {
+    setLogsLoading(true)
+    Promise.all([
+      portalApi.workoutLogs({ limit: 20 }),
+      portalApi.bodyWeightProgress(),
+    ])
+      .then(([logsRes, progRes]) => {
+        setLogs(logsRes.data.logs || [])
+        setWeightPoints(progRes.data.points || [])
+      })
+      .catch(() => { })
+      .finally(() => setLogsLoading(false))
+  }
+
   useEffect(() => {
     portalApi.workoutPlans().then(({ data }) => setPlans(data)).catch(() => { }).finally(() => setLoading(false))
+    loadLogs()
   }, [])
 
+  // Deep link from the attendance calendar — open the specific workout log
+  // that was tapped, once the log list has finished loading.
+  useEffect(() => {
+    if (!initialLogId || logsLoading) return
+    const found = logs.find((l) => l._id === initialLogId)
+    if (found) {
+      setOpenLog(found)
+      onConsumedInitialLog?.()
+    } else {
+      portalApi.workoutLog(initialLogId)
+        .then(({ data }) => setOpenLog(data))
+        .catch(() => { })
+        .finally(() => onConsumedInitialLog?.())
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialLogId, logsLoading])
+
+  async function deleteLog(id) {
+    await portalApi.deleteWorkoutLog(id)
+    setOpenLog(null)
+    loadLogs()
+  }
+
   if (loading) return <div className="flex justify-center py-10"><Spinner /></div>
-  if (plans.length === 0) return <EmptyState icon="🏋️" title="No workout plans yet" sub="Your trainer will assign a workout programme here." />
   if (open) return <WorkoutDetail plan={open} onBack={() => setOpen(null)} />
+  if (openLog) return (
+    <WorkoutLogDetail
+      log={openLog}
+      onBack={() => setOpenLog(null)}
+      onEdit={() => { setEditingLog(openLog); setShowLogForm(true) }}
+      onDelete={() => deleteLog(openLog._id)}
+    />
+  )
 
   return (
-    <div className="flex flex-col gap-3">
-      {plans.map((plan) => (
-        <button key={plan._id} onClick={() => setOpen(plan)}
-          className="w-full p-5 text-left transition-all card"
-          onMouseEnter={(e) => e.currentTarget.style.borderColor = 'rgba(200,241,53,0.25)'}
-          onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'}>
-          <div className="flex items-start justify-between mb-2">
-            <h3 className="font-bold" style={{ color: 'var(--color-primary)' }}>{plan.name}</h3>
-            <Badge color="lime">{plan.goal?.replace('-', ' ')}</Badge>
+    <div className="flex flex-col gap-5">
+      {/* ── Log a workout ── */}
+      <button onClick={() => { setEditingLog(null); setShowLogForm(true) }}
+        className="w-full font-bold py-3.5 rounded-xl text-sm transition-all"
+        style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
+        ➕ Log a workout
+      </button>
+      {showLogForm && (
+        <WorkoutLogFormModal
+          initial={editingLog}
+          onClose={() => { setShowLogForm(false); setEditingLog(null) }}
+          onSaved={() => { setShowLogForm(false); setEditingLog(null); setOpenLog(null); loadLogs() }}
+        />
+      )}
+
+      {/* ── Body weight progress ── */}
+      {!logsLoading && weightPoints.length > 0 && (
+        <div className="p-4 card">
+          <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>⚖️ Body weight progress</h3>
+          <BodyWeightChart points={weightPoints} />
+        </div>
+      )}
+
+      {/* ── My logged workouts ── */}
+      {!logsLoading && logs.length > 0 && (
+        <div>
+          <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>My logged workouts</h3>
+          <div className="flex flex-col gap-2">
+            {logs.map((log) => (
+              <button key={log._id} onClick={() => setOpenLog(log)}
+                className="flex items-center justify-between w-full gap-3 p-4 text-left card">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold truncate" style={{ color: 'var(--color-primary)' }}>{log.title}</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--color-secondary)' }}>
+                    {new Date(log.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                    {log.exercises?.length > 0 && ` · ${log.exercises.length} exercise${log.exercises.length === 1 ? '' : 's'}`}
+                  </p>
+                </div>
+                {log.caloriesBurned != null && (
+                  <span className="text-sm font-bold shrink-0" style={{ color: 'var(--color-accent)' }}>🔥 {log.caloriesBurned}</span>
+                )}
+              </button>
+            ))}
           </div>
-          {plan.description && <p className="mb-3 text-xs" style={{ color: 'var(--color-secondary)' }}>{plan.description}</p>}
-          <div className="flex gap-4 text-xs" style={{ color: 'var(--color-secondary)' }}>
-            {plan.durationWeeks && <span>📅 {plan.durationWeeks} weeks</span>}
-            {plan.days?.length > 0 && <span>💪 {plan.days.length} training days</span>}
+        </div>
+      )}
+
+      {/* ── Assigned workout plans ── */}
+      <div>
+        <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>Assigned workout plans</h3>
+        {plans.length === 0 ? (
+          <EmptyState icon="🏋️" title="No workout plans yet" sub="Your trainer will assign a workout programme here." />
+        ) : (
+          <div className="flex flex-col gap-3">
+            {plans.map((plan) => (
+              <button key={plan._id} onClick={() => setOpen(plan)}
+                className="w-full p-5 text-left transition-all card"
+                onMouseEnter={(e) => e.currentTarget.style.borderColor = 'rgba(200,241,53,0.25)'}
+                onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'}>
+                <div className="flex items-start justify-between mb-2">
+                  <h3 className="font-bold" style={{ color: 'var(--color-primary)' }}>{plan.name}</h3>
+                  <Badge color="lime">{plan.goal?.replace('-', ' ')}</Badge>
+                </div>
+                {plan.description && <p className="mb-3 text-xs" style={{ color: 'var(--color-secondary)' }}>{plan.description}</p>}
+                <div className="flex gap-4 text-xs" style={{ color: 'var(--color-secondary)' }}>
+                  {plan.durationWeeks && <span>📅 {plan.durationWeeks} weeks</span>}
+                  {plan.days?.length > 0 && <span>💪 {plan.days.length} training days</span>}
+                </div>
+              </button>
+            ))}
           </div>
-        </button>
-      ))}
+        )}
+      </div>
     </div>
   )
 }
@@ -293,11 +411,49 @@ const PT_STATUS_LABEL = {
   declined: 'Declined',
 }
 
+/** Compact card showing progress on an active PT plan assignment — classes used, days left, trainer, fee. */
+function PTPlanCard({ plan }) {
+  const pct = Math.min((plan.classesUsed / plan.classesTotal) * 100, 100)
+  const daysLeft = Math.ceil((new Date(plan.expiryDate) - new Date()) / 86400000)
+  return (
+    <div className="p-4 card" style={{ borderColor: 'rgba(147,51,234,0.35)' }}>
+      <div className="flex items-start justify-between mb-2">
+        <div>
+          <h3 className="text-sm font-bold" style={{ color: 'var(--color-primary)' }}>{plan.name}</h3>
+          {plan.target && <p className="text-xs mt-0.5" style={{ color: 'var(--color-secondary)' }}>🎯 {plan.target}</p>}
+        </div>
+        <span className="text-[10px] font-bold px-2 py-1 rounded-full shrink-0"
+          style={{ background: 'rgba(147,51,234,0.15)', color: '#c084fc' }}>
+          PT PLAN
+        </span>
+      </div>
+
+      <div className="flex items-center justify-between mb-1 text-xs" style={{ color: 'var(--color-secondary)' }}>
+        <span>{plan.classesUsed} / {plan.classesTotal} classes used</span>
+        <span style={{ color: daysLeft <= 3 ? '#f87171' : 'var(--color-secondary)' }}>
+          {daysLeft >= 0 ? `${daysLeft}d left` : 'Expired'}
+        </span>
+      </div>
+      <div className="w-full h-2 overflow-hidden rounded-full" style={{ background: 'var(--color-surface-3)' }}>
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: '#9333ea' }} />
+      </div>
+
+      <div className="flex flex-wrap gap-3 mt-3 text-xs" style={{ color: 'var(--color-secondary)' }}>
+        {plan.trainerId?.name && <span>🏋️ {plan.trainerId.name}</span>}
+        <span>💰 ₹{plan.fee?.toLocaleString('en-IN')}</span>
+        <span>📅 Expires {new Date(plan.expiryDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+      </div>
+    </div>
+  )
+}
+
 function PTTab({ initialSessionId, onConsumedInitialSession }) {
-  const [sessions, setSessions] = useState([])
-  const [progress, setProgress] = useState([])
-  const [stats, setStats] = useState({})
-  const [loading, setLoading] = useState(true)
+  const cached = readCache('pt:sessions')
+  const [sessions, setSessions] = useState(cached?.sessions ?? [])
+  const [progress, setProgress] = useState(cached?.progress ?? [])
+  const [stats, setStats] = useState(cached?.stats ?? {})
+  const [ptPlans, setPtPlans] = useState(cached?.ptPlans ?? [])
+  const [loading, setLoading] = useState(cached === null)
   const [selected, setSelected] = useState(null)
   const [ackLoading, setAckLoading] = useState(null)
   const [ackError, setAckError] = useState('')
@@ -307,21 +463,34 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
 
   async function load() {
     try {
-      const [sessRes, progRes] = await Promise.all([
+      const [sessRes, progRes, plansRes] = await Promise.all([
         portalApi.ptSessions({ limit: 50 }),
         portalApi.ptProgress(),
+        portalApi.ptPlans(),
       ])
-      setSessions(sessRes.data.sessions || [])
-      setStats({
+      const nextSessions = sessRes.data.sessions || []
+      const nextStats = {
         completed: sessRes.data.totalCompleted || 0,
         scheduled: sessRes.data.totalScheduled || 0,
-      })
-      setProgress(progRes.data || [])
-    } catch { /* ignore */ }
+      }
+      const nextProgress = progRes.data || []
+      const nextPlans = plansRes.data.plans || []
+      setSessions(nextSessions)
+      setStats(nextStats)
+      setProgress(nextProgress)
+      setPtPlans(nextPlans)
+      writeCache('pt:sessions', { sessions: nextSessions, stats: nextStats, progress: nextProgress, ptPlans: nextPlans })
+    } catch { /* offline / server error — keep showing cached data above */ }
     finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    // Refetch as soon as connectivity returns, so cached data doesn't go stale.
+    window.addEventListener('online', load)
+    return () => window.removeEventListener('online', load)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Deep link from the attendance calendar — open the specific PT session
   // that was tapped, once the session list has finished loading.
@@ -360,9 +529,12 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
     setCancelling(true)
     setCancelError('')
     try {
-      const { data } = await portalApi.ptCancel(sessionId)
-      setSessions((prev) => prev.map((s) => s._id === sessionId ? data.session : s))
-      if (selected?._id === sessionId) setSelected(data.session)
+      await portalApi.ptCancel(sessionId)
+      // The session is deleted server-side now, not soft-cancelled — drop it
+      // from local state/cache and back out of the detail view.
+      setSessions((prev) => prev.filter((s) => s._id !== sessionId))
+      if (selected?._id === sessionId) setSelected(null)
+      load()
     } catch (err) {
       setCancelError(err.response?.data?.message || 'Could not cancel this booking')
     } finally { setCancelling(false) }
@@ -616,8 +788,11 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
   }
 
   /* ── Session list view ── */
+  const activePlans = ptPlans.filter((p) => p.status === 'active')
+
   if (sessions.length === 0) return (
     <div className="flex flex-col gap-4">
+      {activePlans.map((plan) => <PTPlanCard key={plan._id} plan={plan} />)}
       <EmptyState icon="💪" title="No PT sessions yet"
         sub="Book a slot with a trainer, or wait for one to schedule you." />
       <button onClick={() => setShowBooking(true)}
@@ -638,6 +813,8 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
 
   return (
     <div className="flex flex-col gap-5">
+      {activePlans.map((plan) => <PTPlanCard key={plan._id} plan={plan} />)}
+
       <button onClick={() => setShowBooking(true)}
         className="w-full font-bold py-3.5 rounded-xl text-sm transition-all"
         style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>

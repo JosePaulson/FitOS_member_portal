@@ -2,6 +2,8 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { useMemberAuth } from '../../context/MemberAuthContext'
 import { useInstallPrompt } from '../../context/InstallPromptContext'
 import InstallPrompt from '../InstallPrompt'
+import GeofenceAttendancePrompt from '../GeofenceAttendancePrompt'
+import RateLimitWarning from '../RateLimitWarning'
 
 const TABS = [
   { to: '/',         icon: '🏠', label: 'Home'     },
@@ -48,6 +50,12 @@ export default function Layout() {
 
       {/* Install prompt — floats above the tab bar */}
       <InstallPrompt />
+
+      {/* Global "mark your attendance" geofence prompt — checks once per app open */}
+      <GeofenceAttendancePrompt />
+
+      {/* Global rate-limit warning — fires on any 429 anywhere in the app */}
+      <RateLimitWarning />
 
       {/* Bottom tab bar */}
       <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md grid grid-cols-5 z-40"

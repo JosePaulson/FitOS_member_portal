@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { isNetworkError } from '../lib/offline'
 
 const BASE = import.meta.env.VITE_API_URL || '/api'
 
@@ -24,6 +25,20 @@ api.interceptors.response.use(
   (r) => r,
   async (err) => {
     const orig = err.config
+    const url = orig?.url || ''
+    const isAuthRoute = url.includes('/member-portal/auth/')
+
+    // Rate-limited — never a reason to log anyone out. Surface a warning
+    // instead (skip auth routes: login/refresh/change-pin already show
+    // their own inline error from the response message).
+    if (err.response?.status === 429 && !isAuthRoute) {
+      const body = err.response?.data
+      const detailMessage = typeof body === 'string' ? body : body?.message
+      window.dispatchEvent(new CustomEvent('fitos:rate-limited', {
+        detail: { message: detailMessage || "You're doing that a bit too fast — please wait a moment and try again." },
+      }))
+      return Promise.reject(err)
+    }
 
     if (err.response?.status === 401 && !orig._retry) {
       orig._retry = true
@@ -60,8 +75,14 @@ api.interceptors.response.use(
         return api(orig)
       } catch (e) {
         flush(e, null)
-        localStorage.removeItem('m_accessToken')
-        localStorage.removeItem('m_refreshToken')
+        // Only wipe tokens if the server actually rejected the refresh
+        // (expired/invalid). A network failure just means we couldn't
+        // reach it right now — the tokens are still good, keep them so a
+        // later request (once back online) can retry.
+        if (!isNetworkError(e)) {
+          localStorage.removeItem('m_accessToken')
+          localStorage.removeItem('m_refreshToken')
+        }
 
         // Do not force reload/redirect here
         return Promise.reject(e)

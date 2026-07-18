@@ -86,13 +86,13 @@ export default function FoodScannerModal({ onClose, onSaved }) {
         {!previewUrl && (
           <div className="grid grid-cols-2 gap-3 mb-2">
             <button onClick={() => cameraInputRef.current?.click()}
-              className="flex flex-col items-center gap-2 py-6 transition-all rounded-xl"
+              className="flex flex-col items-center gap-2 py-6 rounded-xl transition-all"
               style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
               <span className="text-2xl">📸</span>
               <span className="text-xs font-semibold" style={{ color: 'var(--color-primary)' }}>Take Photo</span>
             </button>
             <button onClick={() => galleryInputRef.current?.click()}
-              className="flex flex-col items-center gap-2 py-6 transition-all rounded-xl"
+              className="flex flex-col items-center gap-2 py-6 rounded-xl transition-all"
               style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
               <span className="text-2xl">🖼️</span>
               <span className="text-xs font-semibold" style={{ color: 'var(--color-primary)' }}>Upload from Gallery</span>
@@ -154,7 +154,7 @@ export default function FoodScannerModal({ onClose, onSaved }) {
               <p className="text-4xl font-black" style={{ color: 'var(--color-accent)' }}>
                 🔥 {result.scan.totalCalories}
               </p>
-              <p className="mt-1 text-xs" style={{ color: 'var(--color-secondary)' }}>estimated kcal</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--color-secondary)' }}>estimated kcal</p>
             </div>
 
             {/* Macros */}

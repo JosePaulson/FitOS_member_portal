@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useMemberAuth } from '../context/MemberAuthContext'
 import { portalApi } from '../api/index'
 import Spinner, { Badge, membershipBadge } from '../components/ui/Spinner'
+import { readCache, writeCache } from '../lib/offline'
 
 const MONTH_NAMES = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -14,14 +15,26 @@ function fmt(d) {
 
 export default function Home() {
   const { member, gym } = useMemberAuth()
-  const [summary, setSummary] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [summary, setSummary] = useState(() => readCache('home:summary'))
+  const [loading, setLoading] = useState(summary === null)
+
+  function load() {
+    Promise.all([portalApi.attendanceSummary(), portalApi.ptSessions()])
+      .then(([a, p]) => {
+        const next = { attendance: a.data, pt: p.data }
+        setSummary(next)
+        writeCache('home:summary', next)
+      })
+      .catch(() => { /* offline / server error — keep showing cached summary above */ })
+      .finally(() => setLoading(false))
+  }
 
   useEffect(() => {
-    Promise.all([portalApi.attendanceSummary(), portalApi.ptSessions()])
-      .then(([a, p]) => setSummary({ attendance: a.data, pt: p.data }))
-      .catch(() => { })
-      .finally(() => setLoading(false))
+    load()
+    // Refetch as soon as connectivity returns, so cached data doesn't go stale.
+    window.addEventListener('online', load)
+    return () => window.removeEventListener('online', load)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   if (!member) return <div className="flex justify-center py-20"><Spinner /></div>
