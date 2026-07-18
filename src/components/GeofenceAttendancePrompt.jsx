@@ -18,13 +18,44 @@ function getPosition(options) {
   })
 }
 
+function todayLabel() {
+  return new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+/**
+ * Shows a real OS/browser-level push notification — "📍 You're at the gym!"
+ * — with a "Mark attendance" action button baked in, so a member can check
+ * in straight from the notification tray without opening the app first.
+ * Needs Notification permission already granted (the existing "Enable
+ * notifications" toggle in Profile) — this never itself prompts for it, to
+ * avoid ambushing the member mid-geofence-check.
+ */
+async function showGeofenceNotification() {
+  if (!('serviceWorker' in navigator) || typeof Notification === 'undefined') return
+  if (Notification.permission !== 'granted') return
+  try {
+    const reg = await navigator.serviceWorker.ready
+    await reg.showNotification("📍 You're at the gym!", {
+      body: `Mark your attendance for ${todayLabel()}`,
+      tag: 'geofence-attendance',
+      renotify: true,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      actions: [{ action: 'mark-attendance', title: '✅ Mark attendance' }],
+      data: { url: '/profile#attendance' },
+    })
+  } catch { /* notification display isn't critical — the in-app modal still covers it */ }
+}
+
 /**
  * Mounted once in Layout, so it lives for the whole app session. As soon as
  * the app opens, if the gym has a location configured and the member hasn't
  * already checked in today, it silently checks the member's device location
- * — and if they're within the gym's geofence radius, surfaces a prompt to
- * mark attendance with one tap. Never nags: permission denials, being out
- * of range, or already having checked in all just mean nothing happens.
+ * — and if they're within the gym's geofence radius, surfaces both an
+ * in-app prompt AND a real push notification (with a one-tap "Mark
+ * attendance" action) to mark attendance. Never nags: permission denials,
+ * being out of range, or already having checked in all just mean nothing
+ * happens.
  */
 export default function GeofenceAttendancePrompt() {
   const { gym } = useMemberAuth()
@@ -48,7 +79,10 @@ export default function GeofenceAttendancePrompt() {
           pos.coords.latitude, pos.coords.longitude,
           gym.location.lat, gym.location.lng
         )
-        if (distance <= (gym.location.radiusMeters || 50)) setVisible(true)
+        if (distance <= (gym.location.radiusMeters || 50)) {
+          setVisible(true)
+          showGeofenceNotification()
+        }
       } catch {
         // Permission denied, timeout, or offline — just don't prompt. No
         // error shown; this is a convenience feature, not a requirement.
@@ -57,6 +91,7 @@ export default function GeofenceAttendancePrompt() {
   }, [gym])
 
   async function markAttendance() {
+    setVisible(true)
     setStatus('submitting')
     setError('')
     try {
@@ -71,9 +106,34 @@ export default function GeofenceAttendancePrompt() {
     }
   }
 
+  // Tapping "Mark attendance" on the OS notification while the app is
+  // already open — the service worker posts this message instead of just
+  // navigating, so the check-in happens with a single tap.
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    function handleMessage(event) {
+      if (event.data?.type === 'MARK_ATTENDANCE_REQUESTED') markAttendance()
+    }
+    navigator.serviceWorker.addEventListener('message', handleMessage)
+    return () => navigator.serviceWorker.removeEventListener('message', handleMessage)
+  }, [])
+
+  // Tapping the notification action when the app WASN'T open — the service
+  // worker opens a fresh window with this flag instead.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('markAttendance') === '1') {
+      params.delete('markAttendance')
+      const rest = params.toString()
+      window.history.replaceState({}, '', window.location.pathname + (rest ? `?${rest}` : ''))
+      markAttendance()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   if (!visible) return null
 
-  const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const today = todayLabel()
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center px-6" style={{ background: 'rgba(0,0,0,0.65)' }}>

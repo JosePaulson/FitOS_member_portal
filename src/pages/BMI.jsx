@@ -13,6 +13,44 @@ function getCategory(bmi) { return BMI_CATEGORIES.find((c) => bmi < c.max) || BM
 function calcBMI(w, h) { const hm = h / 100; return w / (hm * hm) }
 function idealRange(h) { const hm = h / 100; return { min: (18.5 * hm * hm).toFixed(1), max: (24.9 * hm * hm).toFixed(1) } }
 
+/**
+ * Devine formula (1974) — the long-standing clinical reference for ideal
+ * body weight, still the most widely used in medicine today. Genuinely
+ * gender-specific: the base weight for the first 5 feet of height differs
+ * because it derives from population weight-for-height data collected
+ * separately by sex, not just a flat offset.
+ */
+function idealBodyWeight(heightCm, gender) {
+  const inchesOver5ft = Math.max(0, heightCm / 2.54 - 60)
+  const base = gender === 'female' ? 45.5 : 50
+  return +(base + 2.3 * inchesOver5ft).toFixed(1)
+}
+
+/**
+ * Deurenberg formula (1991) — BMI alone can't tell fat from muscle, which
+ * is the single biggest source of BMI's well-known inaccuracy (it can
+ * misclassify muscular people as "overweight"). This estimates body fat %
+ * from BMI, age, and sex — sex matters a lot here since women carry
+ * meaningfully more essential fat than men at the same BMI/age.
+ */
+function bodyFatPercent(bmi, age, gender) {
+  const sex = gender === 'female' ? 0 : 1
+  const bf = 1.2 * bmi + 0.23 * age - 10.8 * sex - 5.4
+  return +Math.max(2, bf).toFixed(1) // floor at a physiologically plausible minimum
+}
+
+/**
+ * ACE (American Council on Exercise) body fat % categories — thresholds
+ * are meaningfully different by gender due to essential fat differences,
+ * not just shifted BMI bands.
+ */
+function bodyFatCategory(bf, gender) {
+  const table = gender === 'female'
+    ? [{ max: 13, label: 'Essential fat' }, { max: 20, label: 'Athletic' }, { max: 24, label: 'Fitness' }, { max: 31, label: 'Average' }, { max: Infinity, label: 'Above average' }]
+    : [{ max: 5, label: 'Essential fat' }, { max: 13, label: 'Athletic' }, { max: 17, label: 'Fitness' }, { max: 24, label: 'Average' }, { max: Infinity, label: 'Above average' }]
+  return table.find((c) => bf < c.max)?.label || table.at(-1).label
+}
+
 const HISTORY_KEY = 'fitos_bmi_history'
 function loadHistory() { try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]') } catch { return [] } }
 function saveHistory(h) { localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 10))) }
@@ -40,10 +78,14 @@ export default function BMI() {
     const ideal = idealRange(h)
     const a = parseFloat(age) || 25
     const bmr = gender === 'male' ? 10 * w + 6.25 * h - 5 * a + 5 : 10 * w + 6.25 * h - 5 * a - 161
+    const ibw = idealBodyWeight(h, gender)
+    const bodyFat = bodyFatPercent(bmi, a, gender)
+    const bodyFatCat = bodyFatCategory(bodyFat, gender)
 
     const r = {
       bmi: +bmi.toFixed(1), category: cat.label, color: cat.color, tip: cat.tip,
-      ideal, bmr: Math.round(bmr), weight: w.toFixed(1), height: h.toFixed(1),
+      ideal, idealBodyWeight: ibw, bodyFat, bodyFatCat, gender,
+      bmr: Math.round(bmr), weight: w.toFixed(1), height: h.toFixed(1),
       date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
     }
     setResult(r)
@@ -90,7 +132,7 @@ export default function BMI() {
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Age (optional)"><input type="number" value={age} onChange={(e) => setAge(e.target.value)} className="field-input" placeholder="28" /></Field>
-          <Field label="Gender (optional)">
+          <Field label="Gender (used for BMR, ideal weight & body fat %)">
             <div className="flex gap-1 p-1 rounded-lg" style={{ background: 'var(--color-surface-3)', border: '1px solid var(--color-border)' }}>
               {['male', 'female'].map((g) => (
                 <button key={g} type="button" onClick={() => setGender(g)}
@@ -143,7 +185,8 @@ export default function BMI() {
           {/* Stats */}
           <div className="grid grid-cols-2 gap-3 pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
             {[
-              { label: 'Ideal weight range', value: `${result.ideal.min}–${result.ideal.max} kg` },
+              { label: 'Ideal weight range (BMI-based)', value: `${result.ideal.min}–${result.ideal.max} kg` },
+              { label: `Ideal body weight (${result.gender})`, value: `${result.idealBodyWeight} kg` },
               { label: 'Your weight', value: `${result.weight} kg` },
               { label: 'Your height', value: `${result.height} cm` },
               ...(result.bmr > 0 ? [{ label: 'Basal metabolic rate', value: `${result.bmr} kcal/day` }] : []),
@@ -154,6 +197,24 @@ export default function BMI() {
               </div>
             ))}
           </div>
+
+          {/* Body fat estimate — gender-adjusted, since BMI alone can't tell fat from muscle */}
+          {result.bodyFat != null && (
+            <div className="pt-3" style={{ borderTop: '1px solid var(--color-border)' }}>
+              <div className="flex items-baseline justify-between mb-1.5">
+                <p className="text-xs" style={{ color: 'var(--color-secondary)' }}>Estimated body fat</p>
+                <p className="text-sm font-bold" style={{ color: 'var(--color-primary)' }}>
+                  {result.bodyFat}% <span className="text-xs font-normal" style={{ color: 'var(--color-secondary)' }}>· {result.bodyFatCat}</span>
+                </p>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full" style={{ background: 'var(--color-surface-3)' }}>
+                <div className="h-2 transition-all rounded-full" style={{ width: `${Math.min(100, result.bodyFat * 2)}%`, background: 'var(--color-accent)' }} />
+              </div>
+              <p className="text-[10px] mt-1.5" style={{ color: 'var(--color-hint)' }}>
+                Estimated from BMI, age, and sex (Deurenberg formula) — not a substitute for a skinfold, DEXA, or bioimpedance measurement.
+              </p>
+            </div>
+          )}
 
           {/* Tip */}
           <div className="px-4 py-3 text-xs leading-relaxed rounded-xl"

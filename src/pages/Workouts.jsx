@@ -114,12 +114,23 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
   if (loading) return <div className="flex justify-center py-10"><Spinner /></div>
   if (open) return <WorkoutDetail plan={open} onBack={() => setOpen(null)} />
   if (openLog) return (
-    <WorkoutLogDetail
-      log={openLog}
-      onBack={() => setOpenLog(null)}
-      onEdit={() => { setEditingLog(openLog); setShowLogForm(true) }}
-      onDelete={() => deleteLog(openLog._id)}
-    />
+    <>
+      <WorkoutLogDetail
+        log={openLog}
+        onBack={() => setOpenLog(null)}
+        onEdit={() => { setEditingLog(openLog); setShowLogForm(true) }}
+        onDelete={() => deleteLog(openLog._id)}
+      />
+      {/* Rendered as a sibling, not gated behind the branch above — otherwise
+          this early return would make the edit modal unreachable. */}
+      {showLogForm && (
+        <WorkoutLogFormModal
+          initial={editingLog}
+          onClose={() => { setShowLogForm(false); setEditingLog(null) }}
+          onSaved={(saved) => { setShowLogForm(false); setEditingLog(null); setOpenLog(saved); loadLogs() }}
+        />
+      )}
+    </>
   )
 
   return (
@@ -447,12 +458,30 @@ function PTPlanCard({ plan }) {
   )
 }
 
+/** Shown in the PT tab when a member has no active PT plan — replaces the plan-status card. */
+function NoPTPlanCard({ catalog }) {
+  return (
+    <div className="p-4 text-center card">
+      <p className="text-sm font-semibold" style={{ color: 'var(--color-primary)' }}>No PT plan available</p>
+      {catalog?.startingAtPerSession != null && (
+        <p className="mt-1 text-xs" style={{ color: 'var(--color-secondary)' }}>
+          PT plans at {catalog.gymName || 'your gym'} start at ₹{catalog.startingAtPerSession.toLocaleString('en-IN')}/session
+        </p>
+      )}
+      <p className="mt-1.5 text-[11px]" style={{ color: 'var(--color-secondary)' }}>
+        Ask your trainer or the front desk to get one assigned.
+      </p>
+    </div>
+  )
+}
+
 function PTTab({ initialSessionId, onConsumedInitialSession }) {
   const cached = readCache('pt:sessions')
   const [sessions, setSessions] = useState(cached?.sessions ?? [])
   const [progress, setProgress] = useState(cached?.progress ?? [])
   const [stats, setStats] = useState(cached?.stats ?? {})
   const [ptPlans, setPtPlans] = useState(cached?.ptPlans ?? [])
+  const [catalog, setCatalog] = useState(cached?.catalog ?? null)
   const [loading, setLoading] = useState(cached === null)
   const [selected, setSelected] = useState(null)
   const [ackLoading, setAckLoading] = useState(null)
@@ -463,10 +492,11 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
 
   async function load() {
     try {
-      const [sessRes, progRes, plansRes] = await Promise.all([
+      const [sessRes, progRes, plansRes, catalogRes] = await Promise.all([
         portalApi.ptSessions({ limit: 50 }),
         portalApi.ptProgress(),
         portalApi.ptPlans(),
+        portalApi.ptPlanCatalog(),
       ])
       const nextSessions = sessRes.data.sessions || []
       const nextStats = {
@@ -475,11 +505,13 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
       }
       const nextProgress = progRes.data || []
       const nextPlans = plansRes.data.plans || []
+      const nextCatalog = { gymName: catalogRes.data.gymName, startingAtPerSession: catalogRes.data.startingAtPerSession, plans: catalogRes.data.plans || [] }
       setSessions(nextSessions)
       setStats(nextStats)
       setProgress(nextProgress)
       setPtPlans(nextPlans)
-      writeCache('pt:sessions', { sessions: nextSessions, stats: nextStats, progress: nextProgress, ptPlans: nextPlans })
+      setCatalog(nextCatalog)
+      writeCache('pt:sessions', { sessions: nextSessions, stats: nextStats, progress: nextProgress, ptPlans: nextPlans, catalog: nextCatalog })
     } catch { /* offline / server error — keep showing cached data above */ }
     finally { setLoading(false) }
   }
@@ -792,7 +824,9 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
 
   if (sessions.length === 0) return (
     <div className="flex flex-col gap-4">
-      {activePlans.map((plan) => <PTPlanCard key={plan._id} plan={plan} />)}
+      {activePlans.length > 0
+        ? activePlans.map((plan) => <PTPlanCard key={plan._id} plan={plan} />)
+        : <NoPTPlanCard catalog={catalog} />}
       <EmptyState icon="💪" title="No PT sessions yet"
         sub="Book a slot with a trainer, or wait for one to schedule you." />
       <button onClick={() => setShowBooking(true)}
@@ -813,7 +847,9 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
 
   return (
     <div className="flex flex-col gap-5">
-      {activePlans.map((plan) => <PTPlanCard key={plan._id} plan={plan} />)}
+      {activePlans.length > 0
+        ? activePlans.map((plan) => <PTPlanCard key={plan._id} plan={plan} />)
+        : <NoPTPlanCard catalog={catalog} />}
 
       <button onClick={() => setShowBooking(true)}
         className="w-full font-bold py-3.5 rounded-xl text-sm transition-all"

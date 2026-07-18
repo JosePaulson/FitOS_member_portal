@@ -53,9 +53,10 @@ export function WorkoutLogFormModal({ initial, onClose, onSaved }) {
         notes: form.notes,
         exercises: form.exercises.filter((e) => e.name.trim()),
       }
-      if (initial) await portalApi.updateWorkoutLog(initial._id, payload)
-      else await portalApi.logWorkout(payload)
-      onSaved()
+      const { data: saved } = initial
+        ? await portalApi.updateWorkoutLog(initial._id, payload)
+        : await portalApi.logWorkout(payload)
+      onSaved(saved)
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to save workout')
     } finally { setSaving(false) }
@@ -141,11 +142,19 @@ export function WorkoutLogFormModal({ initial, onClose, onSaved }) {
 /** Read-only detail view for a self-logged workout, with edit/delete actions. */
 export function WorkoutLogDetail({ log, onBack, onEdit, onDelete }) {
   const [deleting, setDeleting] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
 
   async function handleDelete() {
-    if (!confirm('Delete this workout log? This can\'t be undone.')) return
     setDeleting(true)
-    try { await onDelete() } finally { setDeleting(false) }
+    setDeleteError('')
+    try {
+      await onDelete()
+    } catch (err) {
+      setDeleteError(err.response?.data?.message || 'Could not delete this workout — try again')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   return (
@@ -205,11 +214,37 @@ export function WorkoutLogDetail({ log, onBack, onEdit, onDelete }) {
       <div className="flex gap-3">
         <button onClick={onEdit} className="flex-1 py-3 text-sm font-semibold transition-all rounded-xl"
           style={{ background: 'var(--color-surface-3)', color: 'var(--color-primary)' }}>✏️ Edit</button>
-        <button onClick={handleDelete} disabled={deleting} className="flex-1 py-3 text-sm font-semibold transition-all rounded-xl disabled:opacity-60"
+        <button onClick={() => setShowConfirm(true)} className="flex-1 py-3 text-sm font-semibold transition-all rounded-xl"
           style={{ background: 'rgba(248,113,113,0.1)', color: '#f87171' }}>
-          {deleting ? 'Deleting…' : '🗑️ Delete'}
+          🗑️ Delete
         </button>
       </div>
+
+      {showConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-6" style={{ background: 'rgba(0,0,0,0.65)' }}>
+          <div className="w-full max-w-sm p-6 text-center rounded-2xl animate-fade-up"
+            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+            <div className="mb-3 text-4xl">🗑️</div>
+            <h2 className="text-lg font-bold" style={{ color: 'var(--color-primary)' }}>Delete this workout?</h2>
+            <p className="mt-2 text-sm" style={{ color: 'var(--color-secondary)' }}>
+              "{log.title}" and all its logged exercises will be permanently removed. This can't be undone.
+            </p>
+            {deleteError && <p className="mt-2 text-xs" style={{ color: '#f87171' }}>{deleteError}</p>}
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => setShowConfirm(false)} disabled={deleting}
+                className="flex-1 py-3 text-sm font-semibold transition-all rounded-xl disabled:opacity-60"
+                style={{ background: 'var(--color-surface-3)', color: 'var(--color-primary)' }}>
+                Cancel
+              </button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="flex-1 py-3 text-sm font-bold transition-all rounded-xl disabled:opacity-60"
+                style={{ background: '#f87171', color: '#1a0000' }}>
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -30,6 +30,7 @@ export const portalApi = {
   ptSession: (id) => api.get(`/member-portal/pt-sessions/${id}`),
   ptProgress: () => api.get('/member-portal/pt-sessions/progress/body-weight'),
   ptPlans: () => api.get('/member-portal/pt-plans'),
+  ptPlanCatalog: () => api.get('/member-portal/pt-plans/catalog'),
 
   // Geofenced self check-in
   attendanceToday: () => api.get('/member-portal/attendance/today'),

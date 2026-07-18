@@ -196,6 +196,15 @@ export default function Profile() {
   const daysInMonth = new Date(calYear, calMonth, 0).getDate()
   const today = localDateKey(new Date())
 
+  // A day with BOTH a plain check-in and a PT session should count as ONE
+  // check-in, not two — union the two date-key sets rather than summing.
+  const totalCheckinDates = new Set([...attendedDates, ...ptSessionsByDate.keys()])
+  const totalCheckins = totalCheckinDates.size
+
+  // "Total PT" only counts sessions that actually happened — scheduled
+  // (not-yet-completed) ones don't count toward this stat.
+  const completedPTCount = [...ptSessionsByDate.values()].filter((s) => s.status === 'completed').length
+
   function prevMonth() {
     const d = new Date(calYear, calMonth - 2, 1)
     setViewMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
@@ -417,14 +426,21 @@ export default function Profile() {
                   className="relative aspect-square flex flex-col items-center justify-center gap-0.5 rounded-lg text-xs font-medium transition-all"
                   style={{
                     cursor: goTo ? 'pointer' : 'default',
-                    background: attended ? S.accent : hasPT ? (ptSessionStatus === 'completed' ? '#9333ea66' : '#92400eaa') : 'transparent',
-                    color: attended ? '#0D0D0D' : hasPT ? '#fafafa'
-                      : isToday ? S.accent
-                        : S.hint,
-                    border: attended ? '1px solid transparent' : hasPT ? `1px solid #9333ea55`
-                      : isToday ? `1px solid ${S.accent}`
-                        : '1px solid transparent',
-                    fontWeight: attended ? 700 : 400,
+                    // PT takes priority over a plain check-in when a day has
+                    // both — the PT styling (purple = completed, amber =
+                    // scheduled) always wins over the lime attendance style.
+                    background: hasPT
+                      ? (ptSessionStatus === 'completed' ? '#9333ea66' : '#92400eaa')
+                      : attended ? S.accent : 'transparent',
+                    color: hasPT ? '#fafafa'
+                      : attended ? '#0D0D0D'
+                        : isToday ? S.accent
+                          : S.hint,
+                    border: hasPT ? '1px solid #9333ea55'
+                      : attended ? '1px solid transparent'
+                        : isToday ? `1px solid ${S.accent}`
+                          : '1px solid transparent',
+                    fontWeight: (hasPT || attended) ? 700 : 400,
                   }}>
                   <span className="leading-none">{day}</span>
                   {ptSession?.bodyWeight && (
@@ -448,10 +464,10 @@ export default function Profile() {
         )}
 
         <p className="text-[11px] text-center mt-3" style={{ color: S.secondary }}>
-          {attendance.length + ptSessionsByDate.size} check-in{(attendance.length + ptSessionsByDate.size) !== 1 ? 's' : ''} this month
+          {totalCheckins} check-in{totalCheckins !== 1 ? 's' : ''} this month
         </p>
         <p className="text-[11px] text-center mt-1" style={{ color: '#9333ea' }}>
-          {ptSessionsByDate.size} PT session{ptSessionsByDate.size !== 1 ? 's' : ''} this month · tap a PT day to view details
+          {completedPTCount} PT session{completedPTCount !== 1 ? 's' : ''} this month · tap a PT day to view details
         </p>
         <div className="flex items-center justify-center gap-4 mt-2">
           <span className="flex items-center gap-1.5 text-[10px]" style={{ color: S.secondary }}>

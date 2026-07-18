@@ -47,9 +47,32 @@ self.addEventListener('push', (event) => {
 /**
  * Tapping a notification focuses an already-open tab if one exists (and
  * navigates it to the right page), otherwise opens a new one.
+ *
+ * The geofence "you're at the gym" notification (triggered client-side —
+ * see GeofenceAttendancePrompt.jsx) additionally has a "Mark attendance"
+ * action button. Clicking THAT skips navigation and instead tells the app
+ * to run the check-in flow directly (or opens the app with a flag if it
+ * isn't open at all), so the whole thing works as a single tap.
  */
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
+
+  if (event.action === 'mark-attendance') {
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+        for (const client of clientList) {
+          const clientUrl = new URL(client.url)
+          if (clientUrl.origin === self.location.origin && 'focus' in client) {
+            client.postMessage({ type: 'MARK_ATTENDANCE_REQUESTED' })
+            return client.focus()
+          }
+        }
+        return self.clients.openWindow('/?markAttendance=1')
+      })
+    )
+    return
+  }
+
   const targetUrl = event.notification.data?.url || '/'
 
   event.waitUntil(
