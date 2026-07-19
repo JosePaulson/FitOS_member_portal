@@ -9,6 +9,7 @@ import IOSInstallSheet from '../components/IOSInstallSheet'
 import { useNotifications } from '../context/NotificationContext'
 import { useAnchorScroll } from '../hooks/useAnchorScroll'
 import { readCache, writeCache } from '../lib/offline'
+import { istDayName } from '../lib/dateIST'
 
 // Calendar-day key from a Date's LOCAL date parts — NOT toISOString(), which
 // gives the UTC date and silently shifts anything before ~5:30am IST onto
@@ -268,6 +269,11 @@ export default function Profile() {
             <p className="text-xs" style={{ color: S.secondary }}>{gym.subdomain}.fitos.in</p>
           </div>
         </div>
+      )}
+
+      {/* ── Gym hours ── */}
+      {gym?.openingHours && Object.values(gym.openingHours).some(Boolean) && (
+        <GymHoursCard hours={gym.openingHours} />
       )}
 
       {/* ── Theme toggle ── */}
@@ -616,5 +622,49 @@ export default function Profile() {
 
       {showIOSSheet && <IOSInstallSheet onClose={() => setShowIOSSheet(false)} />}
     </div>
+  )
+}
+
+const DAY_LABELS = [
+  ['monday', 'Mon'], ['tuesday', 'Tue'], ['wednesday', 'Wed'], ['thursday', 'Thu'],
+  ['friday', 'Fri'], ['saturday', 'Sat'], ['sunday', 'Sun'],
+]
+
+/** Gym opening hours — today's day highlighted (IST), expandable to the full week. */
+function GymHoursCard({ hours }) {
+  const [expanded, setExpanded] = useState(false)
+  const today = istDayName(new Date())
+  const todayLabel = DAY_LABELS.find(([key]) => key === today)?.[1]
+
+  return (
+    <button onClick={() => setExpanded((v) => !v)} className="w-full p-4 text-left card">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-xl">🕐</span>
+          <div>
+            <p className="text-xs" style={{ color: 'var(--color-secondary)' }}>Today ({todayLabel})</p>
+            <p className="text-sm font-semibold" style={{ color: 'var(--color-primary)' }}>
+              {hours[today] || 'Hours not set'}
+            </p>
+          </div>
+        </div>
+        <span className="text-xs" style={{ color: 'var(--color-secondary)' }}>{expanded ? '▲' : '▼'}</span>
+      </div>
+
+      {expanded && (
+        <div className="flex flex-col gap-1.5 pt-3 mt-3" style={{ borderTop: '1px solid var(--color-border)' }}>
+          {DAY_LABELS.map(([key, label]) => (
+            <div key={key} className="flex items-center justify-between text-xs">
+              <span style={{ color: key === today ? 'var(--color-accent)' : 'var(--color-secondary)', fontWeight: key === today ? 700 : 400 }}>
+                {label}
+              </span>
+              <span style={{ color: key === today ? 'var(--color-accent)' : 'var(--color-primary)', fontWeight: key === today ? 700 : 400 }}>
+                {hours[key] || '—'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </button>
   )
 }

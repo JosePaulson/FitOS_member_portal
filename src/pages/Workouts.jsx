@@ -7,6 +7,8 @@ import RecentScans from '../components/RecentScans'
 import { WorkoutLogFormModal, WorkoutLogDetail } from '../components/WorkoutLogForm'
 import BodyWeightChart from '../components/BodyWeightChart'
 import { readCache, writeCache } from '../lib/offline'
+import { istDateKey, istDateTime, fmtISTDate } from '../lib/dateIST'
+import { useBackableState } from '../hooks/useBackableState'
 
 const TABS = ['Workout', 'Diet', 'PT Sessions']
 
@@ -111,13 +113,17 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
     loadLogs()
   }
 
+  // Back button closes these detail views instead of leaving the app.
+  const closeOpenPlan = useBackableState(open, () => setOpen(null))
+  const closeOpenLog = useBackableState(openLog, () => setOpenLog(null))
+
   if (loading) return <div className="flex justify-center py-10"><Spinner /></div>
-  if (open) return <WorkoutDetail plan={open} onBack={() => setOpen(null)} />
+  if (open) return <WorkoutDetail plan={open} onBack={closeOpenPlan} />
   if (openLog) return (
     <>
       <WorkoutLogDetail
         log={openLog}
-        onBack={() => setOpenLog(null)}
+        onBack={closeOpenLog}
         onEdit={() => { setEditingLog(openLog); setShowLogForm(true) }}
         onDelete={() => deleteLog(openLog._id)}
       />
@@ -289,8 +295,11 @@ function DietTab({ autoOpenScanner, onConsumedAutoOpen }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenScanner])
 
+  // Back button closes the plan detail view instead of leaving the app.
+  const closeOpen = useBackableState(open, () => setOpen(null))
+
   if (loading) return <div className="flex justify-center py-10"><Spinner /></div>
-  if (open) return <DietDetail plan={open} onBack={() => setOpen(null)} />
+  if (open) return <DietDetail plan={open} onBack={closeOpen} />
 
   return (
     <div className="flex flex-col gap-5">
@@ -572,6 +581,9 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
     } finally { setCancelling(false) }
   }
 
+  // Back button closes the session detail view instead of leaving the app.
+  const closeSelected = useBackableState(selected, () => setSelected(null))
+
   if (loading) return <div className="flex justify-center py-10"><Spinner /></div>
 
   /* ── Session detail view ── */
@@ -582,7 +594,7 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
 
     return (
       <div className="flex flex-col gap-4 animate-fade-up">
-        <button onClick={() => { setSelected(null); setAckError('') }}
+        <button onClick={() => { closeSelected(); setAckError('') }}
           className="flex items-center self-start gap-2 text-sm transition-colors"
           style={{ color: 'var(--color-secondary)' }}>
           ← Back to sessions
@@ -1021,24 +1033,59 @@ function BookingModal({ onClose, onBooked }) {
   const [time, setTime] = useState('')
   const [trainers, setTrainers] = useState([])
   const [trainerId, setTrainerId] = useState('')
+  const [defaultedFromPlan, setDefaultedFromPlan] = useState(false)
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
 
+  // Availability for the selected trainer + date (real slots, not just the
+  // static gym-hours list) — only meaningful once both are picked.
+  const [slotsLoading, setSlotsLoading] = useState(false)
+  const [availableSlots, setAvailableSlots] = useState(null) // null = not fetched yet
+  const [unavailableReason, setUnavailableReason] = useState('')
+
   useEffect(() => {
     portalApi.ptTrainers().then(({ data }) => setTrainers(data || [])).catch(() => { })
+    // Default the trainer to whoever's on the member's active PT plan —
+    // still changeable, just a sensible starting point.
+    portalApi.ptPlans().then(({ data }) => {
+      const active = (data.plans || []).find((p) => p.status === 'active' && p.trainerId?._id)
+      if (active) {
+        setTrainerId(active.trainerId._id)
+        setDefaultedFromPlan(true)
+      }
+    }).catch(() => { })
   }, [])
 
+  useEffect(() => {
+    if (!date || !trainerId) { setAvailableSlots(null); setUnavailableReason(''); return }
+    setSlotsLoading(true)
+    setTime('')
+    const dateKey = istDateKey(new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12))
+    portalApi.ptAvailableSlots(trainerId, dateKey)
+      .then(({ data }) => {
+        setAvailableSlots(data.slots || [])
+        setUnavailableReason(data.available ? '' : (data.reason || 'No slots available that day'))
+      })
+      .catch(() => { setAvailableSlots(null); setUnavailableReason('') })
+      .finally(() => setSlotsLoading(false))
+  }, [date, trainerId])
+
   const isCurrentMonth = month.getFullYear() === today.getFullYear() && month.getMonth() === today.getMonth()
+  // With a specific trainer picked, show only their real bookable slots;
+  // "no preference" falls back to the general gym-hours list.
+  const displaySlots = trainerId ? (availableSlots || []) : TIME_SLOTS
 
   async function submit() {
     if (!date || !time) { setError('Pick a date and time'); return }
     setError(''); setSubmitting(true)
     try {
-      const [h, m] = time.split(':').map(Number)
-      const when = new Date(date)
-      when.setHours(h, m, 0, 0)
+      // Build the appointment instant from explicit IST wall-clock time —
+      // NOT the device's local timezone (setHours would silently book the
+      // wrong instant for a member whose phone isn't set to IST).
+      const dateKey = istDateKey(new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12))
+      const when = istDateTime(dateKey, time)
 
       await portalApi.ptRequest({
         date: when.toISOString(),
@@ -1076,6 +1123,21 @@ function BookingModal({ onClose, onBooked }) {
             <p className="mb-4 text-xs" style={{ color: 'var(--color-secondary)' }}>
               Pick a date and time — a trainer will confirm it from their dashboard.
             </p>
+
+            {/* Trainer preference — first, since availability below depends on it */}
+            <div className="mb-4">
+              <label className="text-xs font-semibold mb-1.5 block" style={{ color: 'var(--color-secondary)' }}>
+                Preferred trainer {defaultedFromPlan && trainerId ? '(from your PT plan — changeable)' : '(optional)'}
+              </label>
+              <select value={trainerId} onChange={(e) => { setTrainerId(e.target.value); setDefaultedFromPlan(false); setError('') }}
+                className="w-full rounded-lg px-3 py-2.5 text-sm outline-none"
+                style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-primary)' }}>
+                <option value="">No preference</option>
+                {trainers.map((t) => (
+                  <option key={t._id} value={t._id}>{t.name}{t.role === 'owner' ? ' (Owner)' : ''}</option>
+                ))}
+              </select>
+            </div>
 
             {/* Calendar */}
             <div className="p-3 mb-4 rounded-xl" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
@@ -1124,37 +1186,29 @@ function BookingModal({ onClose, onBooked }) {
             {date && (
               <div className="mb-4">
                 <p className="mb-2 text-xs font-semibold" style={{ color: 'var(--color-secondary)' }}>
-                  Time on {date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
+                  Time on {date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' })}
                 </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {TIME_SLOTS.map((slot) => (
-                    <button key={slot} onClick={() => { setTime(slot); setError('') }}
-                      className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
-                      style={{
-                        background: time === slot ? 'var(--color-accent)' : 'var(--color-surface-3)',
-                        color: time === slot ? '#0D0D0D' : 'var(--color-primary)',
-                      }}>
-                      {slotLabel(slot)}
-                    </button>
-                  ))}
-                </div>
+                {slotsLoading ? (
+                  <div className="flex justify-center py-3"><Spinner size="sm" /></div>
+                ) : trainerId && unavailableReason ? (
+                  <p className="text-xs" style={{ color: '#f87171' }}>⚠️ {unavailableReason}</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {displaySlots.length === 0 && <p className="text-xs" style={{ color: 'var(--color-secondary)' }}>No slots left that day.</p>}
+                    {displaySlots.map((slot) => (
+                      <button key={slot} onClick={() => { setTime(slot); setError('') }}
+                        className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
+                        style={{
+                          background: time === slot ? 'var(--color-accent)' : 'var(--color-surface-3)',
+                          color: time === slot ? '#0D0D0D' : 'var(--color-primary)',
+                        }}>
+                        {slotLabel(slot)}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
-
-            {/* Trainer preference */}
-            <div className="mb-3">
-              <label className="text-xs font-semibold mb-1.5 block" style={{ color: 'var(--color-secondary)' }}>
-                Preferred trainer (optional)
-              </label>
-              <select value={trainerId} onChange={(e) => setTrainerId(e.target.value)}
-                className="w-full rounded-lg px-3 py-2.5 text-sm outline-none"
-                style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-primary)' }}>
-                <option value="">No preference</option>
-                {trainers.map((t) => (
-                  <option key={t._id} value={t._id}>{t.name}{t.role === 'owner' ? ' (Owner)' : ''}</option>
-                ))}
-              </select>
-            </div>
 
             {/* Notes */}
             <div className="mb-4">

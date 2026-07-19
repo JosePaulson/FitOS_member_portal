@@ -1,18 +1,13 @@
 import { useState } from 'react'
 import { portalApi } from '../api/index'
 import Spinner from './ui/Spinner'
-
-function pad(n) { return String(n).padStart(2, '0') }
-function toLocalInputValue(date) {
-  const d = date ? new Date(date) : new Date()
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
+import { toISTInputValue, parseISTInputValue, fmtISTDateTime } from '../lib/dateIST'
 
 /** Create/edit form for a self-logged workout — exercises, body weight, duration, time. */
 export function WorkoutLogFormModal({ initial, onClose, onSaved }) {
   const [form, setForm] = useState({
     title: initial?.title || '',
-    when: toLocalInputValue(initial?.date), // defaults to "now" for a new log
+    when: toISTInputValue(initial?.date), // defaults to "now" (IST) for a new log
     durationMinutes: initial?.durationMinutes || 60,
     bodyWeight: initial?.bodyWeight ?? '',
     notes: initial?.notes || '',
@@ -47,7 +42,10 @@ export function WorkoutLogFormModal({ initial, onClose, onSaved }) {
     try {
       const payload = {
         title: form.title,
-        date: new Date(form.when).toISOString(),
+        // Treat the picked value as IST wall-clock time, not the device's
+        // own local time — a member's phone timezone shouldn't change what
+        // gets stored.
+        date: parseISTInputValue(form.when).toISOString(),
         durationMinutes: Number(form.durationMinutes) || 60,
         bodyWeight: form.bodyWeight === '' ? undefined : Number(form.bodyWeight),
         notes: form.notes,
@@ -166,7 +164,7 @@ export function WorkoutLogDetail({ log, onBack, onEdit, onDelete }) {
       <div>
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-primary)' }}>{log.title}</h2>
         <p className="mt-1 text-sm" style={{ color: 'var(--color-secondary)' }}>
-          {new Date(log.date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })}
+          {fmtISTDateTime(log.date, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })}
         </p>
       </div>
 

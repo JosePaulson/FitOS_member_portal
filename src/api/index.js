@@ -45,6 +45,7 @@ export const portalApi = {
   bodyWeightProgress: () => api.get('/member-portal/workout-logs/progress/body-weight'),
   ptAcknowledge: (id) => api.post(`/member-portal/pt-sessions/${id}/acknowledge`),
   ptTrainers: () => api.get('/member-portal/pt-sessions/trainers'),
+  ptAvailableSlots: (trainerId, date) => api.get('/member-portal/pt-sessions/available-slots', { params: { trainerId, date } }),
   ptRequest: (data) => api.post('/member-portal/pt-sessions/request', data),
   ptCancel: (id) => api.post(`/member-portal/pt-sessions/${id}/cancel`),
   equipment: (params = {}) => api.get('/member-portal/equipment', { params }),
