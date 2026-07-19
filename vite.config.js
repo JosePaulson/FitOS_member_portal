@@ -1,10 +1,35 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import fs from 'node:fs'
+import path from 'node:path'
+
+// A fresh value every time `vite build` runs. Baked into the JS bundle via
+// `define` (so the already-loaded app knows what version IT is), and also
+// written to dist/version.json (a plain static file, always reflecting
+// whatever's actually deployed) — the update-checker compares the two.
+const BUILD_VERSION = String(Date.now())
+
+function versionFilePlugin() {
+  return {
+    name: 'write-version-json',
+    apply: 'build',
+    writeBundle(options) {
+      fs.writeFileSync(
+        path.join(options.dir || 'dist', 'version.json'),
+        JSON.stringify({ version: BUILD_VERSION })
+      )
+    },
+  }
+}
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(BUILD_VERSION),
+  },
   plugins: [
     react(),
+    versionFilePlugin(),
     VitePWA({
       // injectManifest (rather than the default generateSW) lets us ship a
       // hand-written service worker (src/sw.js) with custom `push` and
@@ -18,6 +43,11 @@ export default defineConfig({
         // (equipment/workout photos, videos) are loaded from the API and
         // Cloudinary directly, not part of the app shell.
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        // Must NEVER be precached — the update-checker relies on fetching
+        // this fresh (network, no-store) to detect a new deploy. If the
+        // service worker served it from cache, updates would never be
+        // detected.
+        globIgnores: ['version.json'],
       },
       registerType: 'autoUpdate',
       includeAssets: ['apple-touch-icon.png'],
