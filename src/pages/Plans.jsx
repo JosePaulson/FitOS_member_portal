@@ -48,7 +48,7 @@ export default function Plans() {
 
   return (
     <div className="flex flex-col gap-8 px-5 py-6">
-      <h1 className="text-xl font-bold tracking-tight" style={{ color: 'var(--color-primary)' }}>Membership</h1>
+      {/* <h1 className="text-xl font-bold tracking-tight" style={{ color: 'var(--color-primary)' }}>Plan Details</h1> */}
 
       {/* ══════════ YOUR PLANS ══════════ */}
       <div>
