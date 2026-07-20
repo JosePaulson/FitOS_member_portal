@@ -2,6 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Native-app feel ──────────────────────────────────────────────────────
+   This is a PWA, not a web page — no text selection on tap-and-hold, no
+   pinch/double-tap zoom. Inputs/textareas/contenteditable are exempted so
+   typing and copying what you typed still works normally.
+   ────────────────────────────────────────────────────────────────────── */
+html, body {
+  touch-action: manipulation; /* belt-and-suspenders for double-tap zoom — some browsers ignore the viewport meta tag */
+  -webkit-text-size-adjust: 100%;
+}
+
+body, #root {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none; /* iOS: suppress the press-and-hold callout menu */
+}
+
+input, textarea, [contenteditable="true"] {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
 /* ── Theme variables ─────────────────────────────────────────────────────
    Applied to <html data-theme="dark|light">
    Every component uses semantic tokens — never raw hex.
