@@ -289,6 +289,20 @@ export default function Profile() {
         <ThemeToggle isDark={isDark} onToggle={toggle} />
       </div>
 
+      {/* ── Support & feedback ── */}
+      <button
+        onClick={() => navigate('/support')}
+        className="flex items-center justify-between p-5 text-left card"
+      >
+        <div>
+          <p className="text-sm font-semibold" style={{ color: S.primary }}>📮 Support & feedback</p>
+          <p className="text-xs mt-0.5" style={{ color: S.secondary }}>
+            Raise a complaint or request, or rate your trainer/staff
+          </p>
+        </div>
+        <span style={{ color: S.secondary }}>→</span>
+      </button>
+
       {/* ── Install app ── */}
       {!installed && (canInstall || isIOS) && (
         <button

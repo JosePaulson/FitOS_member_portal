@@ -1,10 +1,16 @@
-import { useEffect, useState } from 'react'
-import { portalApi } from '../api/index'
+import { useEffect, useState, useCallback } from 'react'
+import { portalApi, paymentApi } from '../api/index'
 import Spinner, { Badge, invoiceBadge, EmptyState } from '../components/ui/Spinner'
+import { usePayment } from '../hooks/usePayment'
+import { useBackableState } from '../hooks/useBackableState'
 
 function fmt(d) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function planNameOf(invoice) {
+  return invoice.planId?.name || invoice.ptPlanId?.name || 'Membership'
 }
 
 export default function Billing() {
@@ -13,6 +19,8 @@ export default function Billing() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
+  // null while we haven't heard back yet — avoids flashing the wrong state
+  const [paymentsEnabled, setPaymentsEnabled] = useState(null)
   const LIMIT = 8
 
   useEffect(() => {
@@ -23,7 +31,34 @@ export default function Billing() {
       .finally(() => setLoading(false))
   }, [page])
 
-  if (selected) return <InvoiceDetail invoice={selected} onBack={() => setSelected(null)} />
+  useEffect(() => {
+    paymentApi.config()
+      .then(({ data }) => setPaymentsEnabled(data.enabled))
+      .catch(() => setPaymentsEnabled(false))
+  }, [])
+
+  // Called after a successful online payment — updates both the open
+  // detail view and the list, without a full refetch.
+  const handlePaid = useCallback((updatedInvoice) => {
+    setSelected(updatedInvoice)
+    setInvoices((prev) => prev.map((i) => (i._id === updatedInvoice._id ? updatedInvoice : i)))
+  }, [])
+
+  // Back button (or the in-app "← Back to billing" button) closes the
+  // invoice detail and returns to the list, instead of leaving Billing
+  // entirely — same pattern used for workout/PT/diet detail views.
+  const closeSelected = useBackableState(selected, () => setSelected(null))
+
+  if (selected) {
+    return (
+      <InvoiceDetail
+        invoice={selected}
+        onBack={closeSelected}
+        paymentsEnabled={paymentsEnabled}
+        onPaid={handlePaid}
+      />
+    )
+  }
 
   return (
     <div className="flex flex-col gap-5 px-5 py-6">
@@ -45,7 +80,7 @@ export default function Billing() {
                   onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--color-border)'}>
                   <div className="flex flex-col gap-1">
                     <span className="font-mono text-xs" style={{ color: 'var(--color-secondary)' }}>{inv.invoiceNumber}</span>
-                    <span className="text-sm font-semibold" style={{ color: 'var(--color-primary)' }}>{inv.planId?.name || 'Membership'}</span>
+                    <span className="text-sm font-semibold" style={{ color: 'var(--color-primary)' }}>{planNameOf(inv)}</span>
                     <span className="text-xs" style={{ color: 'var(--color-secondary)' }}>{fmt(inv.createdAt)}</span>
                   </div>
                   <div className="flex flex-col items-end gap-1.5">
@@ -73,8 +108,18 @@ export default function Billing() {
   )
 }
 
-function InvoiceDetail({ invoice, onBack }) {
+function InvoiceDetail({ invoice, onBack, paymentsEnabled, onPaid }) {
   const [color, label] = invoiceBadge(invoice.status)
+  const { pay, status, error, isProcessing } = usePayment()
+  const planName = planNameOf(invoice)
+
+  function handlePay() {
+    pay(() => paymentApi.payInvoice(invoice._id), {
+      description: `${planName} — ${invoice.invoiceNumber}`,
+      onSuccess: (data) => onPaid(data.invoice),
+    })
+  }
+
   return (
     <div className="flex flex-col gap-5 px-5 py-6">
       <button onClick={onBack} className="flex items-center gap-2 text-sm transition-colors"
@@ -89,7 +134,9 @@ function InvoiceDetail({ invoice, onBack }) {
       </div>
 
       <div className="p-6 text-center card">
-        <p className="mb-1 text-sm" style={{ color: 'var(--color-secondary)' }}>Total paid</p>
+        <p className="mb-1 text-sm" style={{ color: 'var(--color-secondary)' }}>
+          {invoice.status === 'paid' ? 'Total paid' : 'Amount due'}
+        </p>
         <p className="text-4xl font-black tracking-tight" style={{ color: 'var(--color-primary)' }}>
           ₹{invoice.totalAmount?.toLocaleString('en-IN')}
         </p>
@@ -102,7 +149,7 @@ function InvoiceDetail({ invoice, onBack }) {
 
       <div className="flex flex-col p-5 card" style={{ gap: 0 }}>
         {[
-          { label: 'Plan', value: invoice.planId?.name || 'Membership' },
+          { label: 'Plan', value: planName },
           { label: 'Invoice date', value: new Date(invoice.createdAt).toLocaleDateString('en-IN') },
           { label: 'Base amount', value: `₹${invoice.baseAmount?.toLocaleString('en-IN')}` },
           { label: `GST (${invoice.taxRate}%)`, value: `₹${invoice.taxAmount?.toLocaleString('en-IN')}` },
@@ -124,11 +171,31 @@ function InvoiceDetail({ invoice, onBack }) {
           Download PDF invoice
         </a>
       )}
+
       {invoice.status === 'pending' && (
-        <div className="px-4 py-3 text-xs rounded-xl"
-          style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.2)', color: '#fbbf24' }}>
-          💳 Payment pending — contact your gym to complete payment
-        </div>
+        paymentsEnabled ? (
+          <div className="flex flex-col gap-2">
+            <button onClick={handlePay} disabled={isProcessing}
+              className="flex items-center justify-center w-full gap-2 py-3 text-sm font-bold text-center transition-all rounded-xl disabled:opacity-60"
+              style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
+              {isProcessing && <Spinner size="sm" />}
+              {status === 'processing' ? 'Opening payment…'
+                : status === 'verifying' ? 'Confirming payment…'
+                : `Pay ₹${invoice.totalAmount?.toLocaleString('en-IN')} now`}
+            </button>
+            <p className="text-[11px] text-center" style={{ color: 'var(--color-secondary)' }}>
+              Secured by Razorpay · UPI, cards, wallets & netbanking
+            </p>
+            {error && (
+              <p className="text-xs text-center" style={{ color: '#f87171' }}>{error}</p>
+            )}
+          </div>
+        ) : paymentsEnabled === false ? (
+          <div className="px-4 py-3 text-xs rounded-xl"
+            style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.2)', color: '#fbbf24' }}>
+            💳 Payment pending — contact your gym to complete payment
+          </div>
+        ) : null
       )}
     </div>
   )

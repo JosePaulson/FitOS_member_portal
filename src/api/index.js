@@ -78,3 +78,24 @@ export const pushApi = {
   subscribe: (subscription) => api.post('/member-portal/push/subscribe', subscription),
   unsubscribe: (endpoint) => api.post('/member-portal/push/unsubscribe', { endpoint }),
 }
+
+/* ── Payments (Razorpay: membership renewals/switches, PT plans, invoices) ── */
+export const paymentApi = {
+  config: () => api.get('/member-portal/payments/config'),
+  payInvoice: (invoiceId) => api.post(`/member-portal/payments/invoices/${invoiceId}/order`),
+  membershipCheckout: (planId) => api.post('/member-portal/payments/membership/checkout', { planId }),
+  ptCheckout: (ptPlanId) => api.post('/member-portal/payments/pt/checkout', { ptPlanId }),
+  verify: (data) => api.post('/member-portal/payments/verify', data),
+}
+
+/* ── Complaints & requests ─────────────────────────────────────────────────── */
+export const complaintApi = {
+  list: () => api.get('/member-portal/complaints'),
+  create: (data) => api.post('/member-portal/complaints', data),
+}
+
+/* ── Staff / trainer ratings ──────────────────────────────────────────────── */
+export const staffRatingApi = {
+  staff: () => api.get('/member-portal/staff-ratings/staff'),
+  rate: (data) => api.post('/member-portal/staff-ratings', data),
+}

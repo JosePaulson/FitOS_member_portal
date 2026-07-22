@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { portalApi } from '../api/index'
 import Spinner, { EmptyState, Badge } from '../components/ui/Spinner'
 import FoodScannerModal from '../components/FoodScanner'
@@ -9,8 +9,9 @@ import BodyWeightChart from '../components/BodyWeightChart'
 import { readCache, writeCache } from '../lib/offline'
 import { istDateKey, istDateTime, fmtISTDate } from '../lib/dateIST'
 import { useBackableState } from '../hooks/useBackableState'
+import WorkoutVideoLibrary from '../components/WorkoutVideoLibrary'
 
-const TABS = ['Workout', 'Diet', 'PT Sessions']
+const TABS = ['Workout', 'Diet', 'PT Sessions', 'Videos']
 
 export default function Workouts() {
   const [tab, setTab] = useState(0)
@@ -18,8 +19,17 @@ export default function Workouts() {
   const [pendingLogId, setPendingLogId] = useState(null)
   const [autoOpenScanner, setAutoOpenScanner] = useState(false)
   const { state } = useLocation()
+  const consumedDeepLink = useRef(false)
 
+  // Deep-link state (tab/sessionId/openLogId/openScanner) is applied once,
+  // on arrival. Without this guard, a later back-navigation off a detail
+  // view opened via useBackableState would land back on this same route
+  // with the *original* deep-link state object — re-triggering this effect
+  // and immediately reopening the detail the member just closed.
   useEffect(() => {
+    if (consumedDeepLink.current) return
+    if (state?.tab === undefined && !state?.sessionId && !state?.openLogId && !state?.openScanner) return
+    consumedDeepLink.current = true
     if (state?.tab !== undefined) setTab(state.tab)
     if (state?.sessionId) setPendingSessionId(state.sessionId)
     if (state?.openLogId) setPendingLogId(state.openLogId)
@@ -55,6 +65,7 @@ export default function Workouts() {
           onConsumedInitialSession={() => setPendingSessionId(null)}
         />
       )}
+      {tab === 3 && <WorkoutVideoLibrary />}
     </div>
   )
 }

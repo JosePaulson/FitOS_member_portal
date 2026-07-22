@@ -13,6 +13,7 @@ import Profile  from './pages/Profile'
 import BMI      from './pages/BMI'
 import Chat     from './pages/Chat'
 import Equipment from './pages/Equipment'
+import Support from './pages/Support'
 
 export default function App() {
   const { loading } = useMemberAuth()
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="bmi"         element={<BMI />}      />
           <Route path="chat"        element={<Chat />}     />
           <Route path="equipment"   element={<Equipment />} />
+          <Route path="support"     element={<Support />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
