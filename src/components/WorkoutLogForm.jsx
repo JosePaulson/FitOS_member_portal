@@ -1,17 +1,20 @@
 import { useState } from 'react'
 import { portalApi } from '../api/index'
 import Spinner from './ui/Spinner'
+import ExerciseRow from './ExerciseRow'
+import CopyExercisesModal from './CopyExercisesModal'
+import { computePR, formatPR } from '../lib/exercisePR'
 import { toISTInputValue, parseISTInputValue, fmtISTDateTime } from '../lib/dateIST'
 
 /** Create/edit form for a self-logged workout — exercises, body weight, duration, time. */
-export function WorkoutLogFormModal({ initial, onClose, onSaved }) {
+export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
   const [form, setForm] = useState({
     title: initial?.title || '',
     when: toISTInputValue(initial?.date), // defaults to "now" (IST) for a new log
     durationMinutes: initial?.durationMinutes || 60,
     bodyWeight: initial?.bodyWeight ?? '',
     notes: initial?.notes || '',
-    exercises: initial?.exercises?.length ? initial.exercises : [{ name: '', sets: '', reps: '', weight: '' }],
+    exercises: initial?.exercises?.length ? initial.exercises : [{ name: '', sets: '', reps: '', weight: '', muscleGroup: '' }],
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -19,7 +22,7 @@ export function WorkoutLogFormModal({ initial, onClose, onSaved }) {
   const set = (f) => (e) => setForm((v) => ({ ...v, [f]: e.target.value }))
 
   function addExercise() {
-    setForm((v) => ({ ...v, exercises: [...v.exercises, { name: '', sets: '', reps: '', weight: '' }] }))
+    setForm((v) => ({ ...v, exercises: [...v.exercises, { name: '', sets: '', reps: '', weight: '', muscleGroup: '' }] }))
   }
   function updateExercise(i, field, val) {
     setForm((v) => {
@@ -30,6 +33,12 @@ export function WorkoutLogFormModal({ initial, onClose, onSaved }) {
   }
   function removeExercise(i) {
     setForm((v) => ({ ...v, exercises: v.exercises.filter((_, idx) => idx !== i) }))
+  }
+
+  const [showCopyModal, setShowCopyModal] = useState(false)
+  function copyExercises(copied) {
+    setForm((v) => ({ ...v, exercises: [...v.exercises.filter((e) => e.name.trim()), ...copied] }))
+    setShowCopyModal(false)
   }
 
   async function save() {
@@ -61,6 +70,7 @@ export function WorkoutLogFormModal({ initial, onClose, onSaved }) {
   }
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-end justify-center px-0 sm:items-center sm:px-4"
       style={{ background: 'rgba(0,0,0,0.6)' }}>
       <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-5 max-h-[92vh] overflow-y-auto relative animate-fade-up"
@@ -95,22 +105,23 @@ export function WorkoutLogFormModal({ initial, onClose, onSaved }) {
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-medium" style={{ color: 'var(--color-secondary)' }}>Exercises</label>
-              <button type="button" onClick={addExercise} className="text-xs font-semibold" style={{ color: 'var(--color-accent)' }}>+ Add exercise</button>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => setShowCopyModal(true)} className="text-xs font-semibold" style={{ color: 'var(--color-secondary)' }}>
+                  📋 Copy from previous
+                </button>
+                <button type="button" onClick={addExercise} className="text-xs font-semibold" style={{ color: 'var(--color-accent)' }}>+ Add exercise</button>
+              </div>
             </div>
             <div className="flex flex-col gap-2">
               {form.exercises.map((ex, i) => (
-                <div key={i} className="flex items-start gap-2 p-3 rounded-lg" style={{ background: 'var(--color-surface-2)' }}>
-                  <div className="grid flex-1 grid-cols-2 gap-2">
-                    <input placeholder="Exercise name" value={ex.name} onChange={(e) => updateExercise(i, 'name', e.target.value)}
-                      className="col-span-2 text-xs field-input" />
-                    <input placeholder="Sets" type="number" value={ex.sets} onChange={(e) => updateExercise(i, 'sets', e.target.value)} className="text-xs field-input" />
-                    <input placeholder="Reps" value={ex.reps} onChange={(e) => updateExercise(i, 'reps', e.target.value)} className="text-xs field-input" />
-                    <input placeholder="Weight (kg)" type="number" value={ex.weight} onChange={(e) => updateExercise(i, 'weight', e.target.value)} className="col-span-2 text-xs field-input" />
-                  </div>
-                  {form.exercises.length > 1 && (
-                    <button onClick={() => removeExercise(i)} className="mt-1 text-lg leading-none" style={{ color: 'var(--color-secondary)' }}>×</button>
-                  )}
-                </div>
+                <ExerciseRow
+                  key={i}
+                  exercise={ex}
+                  history={history}
+                  showRemove={form.exercises.length > 1}
+                  onChange={(field, val) => updateExercise(i, field, val)}
+                  onRemove={() => removeExercise(i)}
+                />
               ))}
             </div>
           </div>
@@ -134,11 +145,19 @@ export function WorkoutLogFormModal({ initial, onClose, onSaved }) {
         </div>
       </div>
     </div>
+    {showCopyModal && (
+      <CopyExercisesModal
+        logs={(history || []).filter((l) => l._id !== initial?._id)}
+        onClose={() => setShowCopyModal(false)}
+        onCopy={copyExercises}
+      />
+    )}
+    </>
   )
 }
 
 /** Read-only detail view for a self-logged workout, with edit/delete actions. */
-export function WorkoutLogDetail({ log, onBack, onEdit, onDelete }) {
+export function WorkoutLogDetail({ log, history, onBack, onEdit, onDelete }) {
   const [deleting, setDeleting] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [deleteError, setDeleteError] = useState('')
@@ -190,7 +209,15 @@ export function WorkoutLogDetail({ log, onBack, onEdit, onDelete }) {
             {log.exercises.map((ex, i) => (
               <div key={i} className="flex items-center justify-between py-2 text-sm"
                 style={{ borderTop: i === 0 ? 'none' : '1px solid var(--color-border)' }}>
-                <span style={{ color: 'var(--color-primary)' }}>{ex.name}</span>
+                <span className="flex items-center gap-2" style={{ color: 'var(--color-primary)' }}>
+                  {ex.name}
+                  {computePR(history, ex.name) && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                      style={{ background: 'rgba(251,191,36,0.12)', color: '#fbbf24' }}>
+                      🏆 {formatPR(computePR(history, ex.name))}
+                    </span>
+                  )}
+                </span>
                 <div className="flex gap-2 text-xs" style={{ color: 'var(--color-secondary)' }}>
                   {ex.sets && <span>{ex.sets} sets</span>}
                   {ex.reps && <span>× {ex.reps}</span>}

@@ -8,10 +8,18 @@ import { WorkoutLogFormModal, WorkoutLogDetail } from '../components/WorkoutLogF
 import BodyWeightChart from '../components/BodyWeightChart'
 import { readCache, writeCache } from '../lib/offline'
 import { istDateKey, istDateTime, fmtISTDate } from '../lib/dateIST'
+import { computePR, formatPR, buildExerciseMaxMap, sessionHasPR } from '../lib/exercisePR'
 import { useBackableState } from '../hooks/useBackableState'
 import WorkoutVideoLibrary from '../components/WorkoutVideoLibrary'
 
 const TABS = ['Workout', 'Diet', 'PT Sessions', 'Videos']
+
+const LOG_FILTERS = [
+  { key: 'week', label: 'Last week', icon: '📅' },
+  { key: 'month', label: 'Last month', icon: '🗓️' },
+  { key: 'all', label: 'All time', icon: '♾️' },
+  { key: 'pr', label: 'PR', icon: '🏆' },
+]
 
 export default function Workouts() {
   const [tab, setTab] = useState(0)
@@ -81,6 +89,8 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
   const [showLogForm, setShowLogForm] = useState(false)
   const [editingLog, setEditingLog] = useState(null)
   const [openLog, setOpenLog] = useState(null)
+  // Log/body-weight filter: 'week' | 'month' | 'all' | 'pr' | null (none selected)
+  const [logFilter, setLogFilter] = useState(null)
 
   function loadLogs() {
     setLogsLoading(true)
@@ -128,12 +138,60 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
   const closeOpenPlan = useBackableState(open, () => setOpen(null))
   const closeOpenLog = useBackableState(openLog, () => setOpenLog(null))
 
+  // Toggle behaviour: tapping the active filter again clears it (only one at a time).
+  function toggleLogFilter(key) {
+    setLogFilter((cur) => (cur === key ? null : key))
+  }
+
+  // Heaviest weight ever logged per exercise, across the fetched history —
+  // used to tell whether a given session is the one that hit that PR.
+  const exerciseMaxMap = useMemo(() => buildExerciseMaxMap(logs), [logs])
+
+  const prLogIds = useMemo(() => {
+    const ids = new Set()
+    for (const log of logs) {
+      if (sessionHasPR(log, exerciseMaxMap)) ids.add(log._id)
+    }
+    return ids
+  }, [logs, exerciseMaxMap])
+
+  const filteredLogs = useMemo(() => {
+    if (!logFilter) return logs
+    if (logFilter === 'all') return logs
+    if (logFilter === 'pr') return logs.filter((l) => prLogIds.has(l._id))
+    const days = logFilter === 'week' ? 7 : 30
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+    return logs.filter((l) => new Date(l.date).getTime() >= cutoff)
+  }, [logs, logFilter, prLogIds])
+
+  // For the body-weight chart: weight points come from workout logs *and*
+  // PT sessions, so date-range filters apply directly to the points; the PR
+  // filter (only meaningful for workout logs, where we have exercise data)
+  // keeps points whose date matches a PR-hitting workout log.
+  const prLogDateKeys = useMemo(() => {
+    const keys = new Set()
+    for (const log of logs) {
+      if (prLogIds.has(log._id)) keys.add(new Date(log.date).toDateString())
+    }
+    return keys
+  }, [logs, prLogIds])
+
+  const filteredWeightPoints = useMemo(() => {
+    if (!logFilter) return weightPoints
+    if (logFilter === 'all') return weightPoints
+    if (logFilter === 'pr') return weightPoints.filter((p) => prLogDateKeys.has(new Date(p.date).toDateString()))
+    const days = logFilter === 'week' ? 7 : 30
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+    return weightPoints.filter((p) => new Date(p.date).getTime() >= cutoff)
+  }, [weightPoints, logFilter, prLogDateKeys])
+
   if (loading) return <div className="flex justify-center py-10"><Spinner /></div>
   if (open) return <WorkoutDetail plan={open} onBack={closeOpenPlan} />
   if (openLog) return (
     <>
       <WorkoutLogDetail
         log={openLog}
+        history={logs}
         onBack={closeOpenLog}
         onEdit={() => { setEditingLog(openLog); setShowLogForm(true) }}
         onDelete={() => deleteLog(openLog._id)}
@@ -143,6 +201,7 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
       {showLogForm && (
         <WorkoutLogFormModal
           initial={editingLog}
+          history={logs}
           onClose={() => { setShowLogForm(false); setEditingLog(null) }}
           onSaved={(saved) => { setShowLogForm(false); setEditingLog(null); setOpenLog(saved); loadLogs() }}
         />
@@ -161,16 +220,43 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
       {showLogForm && (
         <WorkoutLogFormModal
           initial={editingLog}
+          history={logs}
           onClose={() => { setShowLogForm(false); setEditingLog(null) }}
           onSaved={() => { setShowLogForm(false); setEditingLog(null); setOpenLog(null); loadLogs() }}
         />
+      )}
+
+      {/* ── Filter selectors: last week / last month / all time / PR ── */}
+      {!logsLoading && (logs.length > 0 || weightPoints.length > 0) && (
+        <div className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-0.5">
+          {LOG_FILTERS.map(({ key, label, icon }) => {
+            const active = logFilter === key
+            return (
+              <button key={key} onClick={() => toggleLogFilter(key)}
+                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold whitespace-nowrap transition-all rounded-full shrink-0"
+                style={{
+                  background: active ? 'var(--color-accent)' : 'var(--color-surface-2)',
+                  color: active ? '#0D0D0D' : 'var(--color-secondary)',
+                  border: `1px solid ${active ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                }}>
+                {icon} {label}
+              </button>
+            )
+          })}
+        </div>
       )}
 
       {/* ── Body weight progress ── */}
       {!logsLoading && weightPoints.length > 0 && (
         <div className="p-4 card">
           <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>⚖️ Body weight progress</h3>
-          <BodyWeightChart points={weightPoints} />
+          {filteredWeightPoints.length > 0 ? (
+            <BodyWeightChart points={filteredWeightPoints} />
+          ) : (
+            <p className="py-6 text-xs text-center" style={{ color: 'var(--color-secondary)' }}>
+              No body weight entries in this range.
+            </p>
+          )}
         </div>
       )}
 
@@ -178,23 +264,38 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
       {!logsLoading && logs.length > 0 && (
         <div>
           <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>My logged workouts</h3>
-          <div className="flex flex-col gap-2">
-            {logs.map((log) => (
-              <button key={log._id} onClick={() => setOpenLog(log)}
-                className="flex items-center justify-between w-full gap-3 p-4 text-left card">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold truncate" style={{ color: 'var(--color-primary)' }}>{log.title}</p>
-                  <p className="text-xs mt-0.5" style={{ color: 'var(--color-secondary)' }}>
-                    {new Date(log.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
-                    {log.exercises?.length > 0 && ` · ${log.exercises.length} exercise${log.exercises.length === 1 ? '' : 's'}`}
-                  </p>
-                </div>
-                {log.caloriesBurned != null && (
-                  <span className="text-sm font-bold shrink-0" style={{ color: 'var(--color-accent)' }}>🔥 {log.caloriesBurned}</span>
-                )}
-              </button>
-            ))}
-          </div>
+          {filteredLogs.length === 0 ? (
+            <EmptyState icon="📭" title="No workouts here" sub="Nothing matches this filter yet." />
+          ) : (
+            <div className="flex flex-col gap-2">
+              {filteredLogs.map((log) => {
+                const isPR = prLogIds.has(log._id)
+                return (
+                  <button key={log._id} onClick={() => setOpenLog(log)}
+                    className="flex items-center justify-between w-full gap-3 p-4 text-left card">
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-1.5 text-sm font-semibold truncate" style={{ color: 'var(--color-primary)' }}>
+                        <span className="truncate">{log.title}</span>
+                        {isPR && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0"
+                            style={{ background: 'rgba(251,191,36,0.12)', color: '#fbbf24' }}>
+                            🏆 PR
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--color-secondary)' }}>
+                        {new Date(log.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                        {log.exercises?.length > 0 && ` · ${log.exercises.length} exercise${log.exercises.length === 1 ? '' : 's'}`}
+                      </p>
+                    </div>
+                    {log.caloriesBurned != null && (
+                      <span className="text-sm font-bold shrink-0" style={{ color: 'var(--color-accent)' }}>🔥 {log.caloriesBurned}</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -705,7 +806,15 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
                 <div key={i} className="flex items-center justify-between py-2.5"
                   style={{ borderTop: i === 0 ? 'none' : '1px solid var(--color-border)' }}>
                   <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--color-primary)' }}>{ex.name}</p>
+                    <p className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--color-primary)' }}>
+                      {ex.name}
+                      {computePR(sessions, ex.name) && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                          style={{ background: 'rgba(251,191,36,0.12)', color: '#fbbf24' }}>
+                          🏆 {formatPR(computePR(sessions, ex.name))}
+                        </span>
+                      )}
+                    </p>
                     {ex.notes && (
                       <p className="text-xs mt-0.5" style={{ color: 'var(--color-secondary)' }}>{ex.notes}</p>
                     )}

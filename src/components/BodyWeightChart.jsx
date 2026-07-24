@@ -18,7 +18,10 @@ export default function BodyWeightChart({ points }) {
   const width = 320
   const height = 140
   const padX = 8
-  const padY = 16
+  // Extra head-room on top so the little weight badges above each node
+  // never clip against the top edge of the chart.
+  const padTop = 26
+  const padBottom = 16
 
   const weights = sorted.map((p) => p.bodyWeight)
   const min = Math.min(...weights)
@@ -28,12 +31,12 @@ export default function BodyWeightChart({ points }) {
   const xStep = (width - padX * 2) / (sorted.length - 1)
   const coords = sorted.map((p, i) => {
     const x = padX + i * xStep
-    const y = padY + (1 - (p.bodyWeight - min) / range) * (height - padY * 2)
+    const y = padTop + (1 - (p.bodyWeight - min) / range) * (height - padTop - padBottom)
     return { x, y, ...p }
   })
 
   const linePath = coords.map((c, i) => `${i === 0 ? 'M' : 'L'} ${c.x.toFixed(1)} ${c.y.toFixed(1)}`).join(' ')
-  const areaPath = `${linePath} L ${coords[coords.length - 1].x.toFixed(1)} ${height - padY} L ${coords[0].x.toFixed(1)} ${height - padY} Z`
+  const areaPath = `${linePath} L ${coords[coords.length - 1].x.toFixed(1)} ${height - padBottom} L ${coords[0].x.toFixed(1)} ${height - padBottom} Z`
 
   const first = sorted[0]
   const last = sorted[sorted.length - 1]
@@ -60,11 +63,27 @@ export default function BodyWeightChart({ points }) {
         </defs>
         <path d={areaPath} fill="url(#bwFill)" stroke="none" />
         <path d={linePath} fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-        {coords.map((c, i) => (
-          <circle key={i} cx={c.x} cy={c.y} r={i === coords.length - 1 ? 3.5 : 2}
-            fill={i === coords.length - 1 ? 'var(--color-accent)' : 'var(--color-surface)'}
-            stroke="var(--color-accent)" strokeWidth="1.5" />
-        ))}
+        {coords.map((c, i) => {
+          const label = `${c.bodyWeight}kg`
+          // Rough monospace-ish width estimate so the pill hugs the text.
+          const badgeW = label.length * 5.4 + 8
+          const badgeH = 12
+          const badgeX = Math.min(Math.max(c.x - badgeW / 2, 2), width - badgeW - 2)
+          const badgeY = c.y - 20
+          return (
+            <g key={i}>
+              <circle cx={c.x} cy={c.y} r={i === coords.length - 1 ? 3.5 : 2}
+                fill={i === coords.length - 1 ? 'var(--color-accent)' : 'var(--color-surface)'}
+                stroke="var(--color-accent)" strokeWidth="1.5" />
+              <rect x={badgeX} y={badgeY} width={badgeW} height={badgeH} rx={6}
+                fill="var(--color-surface)" stroke="var(--color-border)" strokeWidth="1" />
+              <text x={badgeX + badgeW / 2} y={badgeY + badgeH / 2 + 3.2} textAnchor="middle"
+                fontSize="8" fontWeight="700" fill="var(--color-primary)">
+                {label}
+              </text>
+            </g>
+          )
+        })}
       </svg>
 
       <div className="flex justify-between mt-1 text-[10px]" style={{ color: 'var(--color-secondary)' }}>
