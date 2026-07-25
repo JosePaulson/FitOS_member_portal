@@ -446,27 +446,35 @@ export default function Profile() {
                   className="relative aspect-square flex flex-col items-center justify-center gap-0.5 rounded-lg text-xs font-medium transition-all"
                   style={{
                     cursor: goTo ? 'pointer' : 'default',
-                    // PT takes priority over a plain check-in when a day has
-                    // both — the PT styling (purple = completed, amber =
-                    // scheduled) always wins over the lime attendance style.
+                    // Priority when a day has multiple things going on: PT
+                    // session styling (purple = completed, amber =
+                    // scheduled) wins over everything; a plain attendance
+                    // check-in or a self-logged workout (no PT) both get the
+                    // same default lime fill used for attendance.
                     background: hasPT
                       ? (ptSessionStatus === 'completed' ? '#9333ea66' : '#92400eaa')
-                      : attended ? S.accent : 'transparent',
+                      : (attended || hasLog) ? S.accent : 'transparent',
                     color: hasPT ? '#fafafa'
-                      : attended ? '#0D0D0D'
+                      : (attended || hasLog) ? '#0D0D0D'
                         : isToday ? S.accent
                           : S.hint,
                     border: hasPT ? '1px solid #9333ea55'
-                      : attended ? '1px solid transparent'
+                      : (attended || hasLog) ? '1px solid transparent'
                         : isToday ? `1px solid ${S.accent}`
                           : '1px solid transparent',
-                    fontWeight: (hasPT || attended) ? 700 : 400,
+                    fontWeight: (hasPT || attended || hasLog) ? 700 : 400,
                   }}>
                   <span className="leading-none">{day}</span>
                   {ptSession?.bodyWeight && (
                     <span className="text-[6.5px] leading-none font-semibold"
                       style={{ color: '#fafafa' }}>
                       {ptSession.bodyWeight.toFixed(1)}
+                    </span>
+                  )}
+                  {!hasPT && workoutLog?.bodyWeight != null && (
+                    <span className="text-[6.5px] leading-none font-semibold"
+                      style={{ color: '#0D0D0D' }}>
+                      {Number(workoutLog.bodyWeight).toFixed(1)}
                     </span>
                   )}
                   {hasPT && (

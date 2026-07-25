@@ -3,14 +3,22 @@ import { Link } from 'react-router-dom'
 import { useMemberAuth } from '../context/MemberAuthContext'
 import { portalApi } from '../api/index'
 import Spinner, { Badge, membershipBadge } from '../components/ui/Spinner'
+import StrengthEnduranceChart from '../components/StrengthEnduranceChart'
 import { readCache, writeCache } from '../lib/offline'
-
-const MONTH_NAMES = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 function daysUntil(d) { return d ? Math.ceil((new Date(d) - new Date()) / 86400000) : null }
 function fmt(d) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+// Average weight across a session's exercises — the effort level of that
+// specific workout, rather than a single outlier lift dominating the trend.
+function avgWeightOf(exercises) {
+  if (!Array.isArray(exercises)) return null
+  const weights = exercises.map((ex) => Number(ex?.weight)).filter((w) => Number.isFinite(w) && w > 0)
+  if (weights.length === 0) return null
+  return +(weights.reduce((sum, w) => sum + w, 0) / weights.length).toFixed(1)
 }
 
 export default function Home() {
@@ -19,9 +27,22 @@ export default function Home() {
   const [loading, setLoading] = useState(summary === null)
 
   function load() {
-    Promise.all([portalApi.attendanceSummary(), portalApi.ptSessions()])
-      .then(([a, p]) => {
-        const next = { attendance: a.data, pt: p.data }
+    Promise.all([portalApi.attendanceSummary(), portalApi.ptSessions(), portalApi.workoutLogs({ limit: 100 })])
+      .then(([a, p, w]) => {
+        // Per-workout strength + endurance trend: each self-logged workout
+        // and PT session contributes its own average lifted weight
+        // ("strength", respective to that specific workout — not a single
+        // blended overall max) and its own duration ("endurance"), most
+        // recent 12 sessions that have at least one of the two.
+        const strength = [
+          ...(w.data.logs || []).map((l) => ({ date: l.date, strength: avgWeightOf(l.exercises), endurance: l.durationMinutes ?? null })),
+          ...(p.data.sessions || []).map((s) => ({ date: s.date, strength: avgWeightOf(s.exercises), endurance: s.durationMinutes ?? null })),
+        ]
+          .filter((x) => x.strength != null || x.endurance != null)
+          .sort((a2, b2) => new Date(b2.date) - new Date(a2.date))
+          .slice(0, 12)
+
+        const next = { attendance: a.data, pt: p.data, strength }
         setSummary(next)
         writeCache('home:summary', next)
       })
@@ -115,24 +136,15 @@ export default function Home() {
         )
       }
 
-      {/* Monthly bar chart */}
+      {/* Strength progress */}
       {
-        summary?.attendance?.length > 0 && (
+        summary?.strength?.length > 0 && (
           <div className="p-5 card">
-            <h2 className="mb-4 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>Monthly check-ins</h2>
-            <div className="flex items-end h-20 gap-2">
-              {[...summary.attendance].reverse().map((m) => {
-                const max = Math.max(...summary.attendance.map((x) => x.count))
-                const pct = Math.round((m.count / max) * 100)
-                return (
-                  <div key={`${m._id.year}-${m._id.month}`} className="flex flex-col items-center flex-1 gap-1">
-                    <span className="text-[10px] font-semibold" style={{ color: 'var(--color-accent)' }}>{m.count}</span>
-                    <div className="w-full transition-all rounded-t" style={{ height: `${pct}%`, minHeight: 4, background: 'rgba(200,241,53,0.3)' }} />
-                    <span className="text-[10px]" style={{ color: 'var(--color-secondary)' }}>{MONTH_NAMES[m._id.month]}</span>
-                  </div>
-                )
-              })}
-            </div>
+            <h2 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>💪 Strength progress</h2>
+            <StrengthEnduranceChart
+              points={summary.strength}
+              emptyMessage="Log a couple more workouts to see your strength and endurance trends here."
+            />
           </div>
         )
       }

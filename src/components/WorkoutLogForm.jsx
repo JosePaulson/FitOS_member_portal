@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { portalApi } from '../api/index'
 import Spinner from './ui/Spinner'
 import ExerciseRow from './ExerciseRow'
 import CopyExercisesModal from './CopyExercisesModal'
-import { computePR, formatPR } from '../lib/exercisePR'
+import { computePR, formatPR, sortByMuscleGroup } from '../lib/exercisePR'
+import { useExerciseCatalog } from '../hooks/useExerciseCatalog'
 import { toISTInputValue, parseISTInputValue, fmtISTDateTime } from '../lib/dateIST'
 
 /** Create/edit form for a self-logged workout — exercises, body weight, duration, time. */
@@ -21,9 +22,43 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
 
   const set = (f) => (e) => setForm((v) => ({ ...v, [f]: e.target.value }))
 
+  // Refs to each exercise row so a newly-added one can be scrolled into
+  // view — cleared and rebuilt every render, indexed to match form.exercises.
+  const exerciseRefs = useRef([])
+  const [scrollToIndex, setScrollToIndex] = useState(null)
+
+  // Tracks whether the main "+ Add exercise" button (up near the top of the
+  // form) is currently scrolled out of view within the modal, so a second
+  // copy can be shown right below the last exercise row when it isn't.
+  const modalScrollRef = useRef(null)
+  const topAddBtnRef = useRef(null)
+  const [topAddBtnVisible, setTopAddBtnVisible] = useState(true)
+
+  useEffect(() => {
+    const root = modalScrollRef.current
+    const target = topAddBtnRef.current
+    if (!root || !target) return
+    const observer = new IntersectionObserver(
+      ([entry]) => setTopAddBtnVisible(entry.isIntersecting),
+      { root, threshold: 0.01 },
+    )
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [])
+
   function addExercise() {
+    setScrollToIndex(form.exercises.length) // index the new row will land at
     setForm((v) => ({ ...v, exercises: [...v.exercises, { name: '', sets: '', reps: '', weight: '', muscleGroup: '' }] }))
   }
+
+  useEffect(() => {
+    if (scrollToIndex == null) return
+    const el = exerciseRefs.current[scrollToIndex]
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setScrollToIndex(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollToIndex, form.exercises.length])
+
   function updateExercise(i, field, val) {
     setForm((v) => {
       const ex = [...v.exercises]
@@ -73,7 +108,7 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
     <>
     <div className="fixed inset-0 z-50 flex items-end justify-center px-0 sm:items-center sm:px-4"
       style={{ background: 'rgba(0,0,0,0.6)' }}>
-      <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-5 max-h-[92vh] overflow-y-auto relative animate-fade-up"
+      <div ref={modalScrollRef} className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-5 max-h-[92vh] overflow-y-auto relative animate-fade-up"
         style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
         <button onClick={onClose} className="absolute text-2xl leading-none top-4 right-5" style={{ color: 'var(--color-secondary)' }}>×</button>
         <h2 className="mb-4 text-lg font-bold" style={{ color: 'var(--color-primary)' }}>
@@ -109,21 +144,32 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
                 <button type="button" onClick={() => setShowCopyModal(true)} className="text-xs font-semibold" style={{ color: 'var(--color-secondary)' }}>
                   📋 Copy from previous
                 </button>
-                <button type="button" onClick={addExercise} className="text-xs font-semibold" style={{ color: 'var(--color-accent)' }}>+ Add exercise</button>
+                <button type="button" ref={topAddBtnRef} onClick={addExercise} className="text-xs font-semibold" style={{ color: 'var(--color-accent)' }}>+ Add exercise</button>
               </div>
             </div>
             <div className="flex flex-col gap-2">
               {form.exercises.map((ex, i) => (
-                <ExerciseRow
-                  key={i}
-                  exercise={ex}
-                  history={history}
-                  showRemove={form.exercises.length > 1}
-                  onChange={(field, val) => updateExercise(i, field, val)}
-                  onRemove={() => removeExercise(i)}
-                />
+                <div key={i} ref={(el) => (exerciseRefs.current[i] = el)}>
+                  <ExerciseRow
+                    exercise={ex}
+                    history={history}
+                    showRemove={form.exercises.length > 1}
+                    onChange={(field, val) => updateExercise(i, field, val)}
+                    onRemove={() => removeExercise(i)}
+                  />
+                </div>
               ))}
             </div>
+            {/* Second "Add exercise" affordance right after the list, so it's
+                always within reach without scrolling back up — only shown
+                once the original button up top has scrolled out of view. */}
+            {!topAddBtnVisible && (
+              <button type="button" onClick={addExercise}
+                className="w-full mt-2 py-2.5 text-xs font-semibold rounded-lg transition-colors"
+                style={{ color: 'var(--color-accent)', border: '1px dashed var(--color-accent)', background: 'rgba(200,241,53,0.05)' }}>
+                + Add exercise
+              </button>
+            )}
           </div>
 
           <LabeledInput label="Notes — optional">
@@ -158,6 +204,7 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
 
 /** Read-only detail view for a self-logged workout, with edit/delete actions. */
 export function WorkoutLogDetail({ log, history, onBack, onEdit, onDelete }) {
+  const { muscleGroups } = useExerciseCatalog()
   const [deleting, setDeleting] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [deleteError, setDeleteError] = useState('')
@@ -206,7 +253,7 @@ export function WorkoutLogDetail({ log, history, onBack, onEdit, onDelete }) {
         <div className="p-4 card">
           <h3 className="mb-2 text-xs font-bold" style={{ color: 'var(--color-secondary)' }}>Exercises</h3>
           <div className="flex flex-col gap-1">
-            {log.exercises.map((ex, i) => (
+            {sortByMuscleGroup(log.exercises, muscleGroups).map((ex, i) => (
               <div key={i} className="flex items-center justify-between py-2 text-sm"
                 style={{ borderTop: i === 0 ? 'none' : '1px solid var(--color-border)' }}>
                 <span className="flex items-center gap-2" style={{ color: 'var(--color-primary)' }}>
@@ -221,7 +268,11 @@ export function WorkoutLogDetail({ log, history, onBack, onEdit, onDelete }) {
                 <div className="flex gap-2 text-xs" style={{ color: 'var(--color-secondary)' }}>
                   {ex.sets && <span>{ex.sets} sets</span>}
                   {ex.reps && <span>× {ex.reps}</span>}
-                  {ex.weight != null && <span>@ {ex.weight}kg</span>}
+                  {ex.weight != null && (
+                    <span className="font-semibold" style={{ color: 'var(--color-accent)' }}>
+                      @ {ex.weight}kg
+                    </span>
+                  )}
                 </div>
               </div>
             ))}

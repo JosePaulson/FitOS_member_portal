@@ -28,7 +28,7 @@ export function computePR(history, exerciseName) {
 
 export function formatPR(pr) {
   if (!pr) return ''
-  return pr.reps ? `${pr.weight}kg × ${pr.reps}` : `${pr.weight}kg`
+  return `${pr.weight}kg`
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -63,4 +63,24 @@ export function sessionHasPR(log, maxMap) {
     if (!name || !Number.isFinite(weight) || weight <= 0) return false
     return maxMap.get(name) === weight
   })
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Groups a logged/session exercise list by muscle group for display, in
+// the same order as MUSCLE_GROUPS (chest, back, shoulders, ...). Exercises
+// with no muscle group tagged sort last. Stable within each group — original
+// entry order is preserved for exercises sharing a group.
+// ─────────────────────────────────────────────────────────────────────────
+
+export function sortByMuscleGroup(exercises, muscleGroupOrder) {
+  if (!Array.isArray(exercises)) return []
+  const order = new Map((muscleGroupOrder || []).map((g, i) => [g.key, i]))
+  const rank = (ex) => {
+    const key = ex?.muscleGroup
+    return order.has(key) ? order.get(key) : order.size
+  }
+  return exercises
+    .map((ex, i) => ({ ex, i }))
+    .sort((a, b) => rank(a.ex) - rank(b.ex) || a.i - b.i)
+    .map(({ ex }) => ex)
 }

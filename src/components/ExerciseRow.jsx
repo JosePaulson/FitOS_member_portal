@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { MUSCLE_GROUPS, EXERCISE_CATALOG } from '../data/exerciseCatalog'
+import { useExerciseCatalog } from '../hooks/useExerciseCatalog'
 import { getCustomExercises, addCustomExercise, getAllCustomExercises } from '../lib/customExercises'
 import { computePR, formatPR } from '../lib/exercisePR'
 
@@ -12,6 +12,7 @@ import { computePR, formatPR } from '../lib/exercisePR'
  * PRs. `onChange(field, value)` mirrors the parent's updateExercise(i, ...).
  */
 export default function ExerciseRow({ exercise, onChange, onRemove, history, showRemove }) {
+  const { muscleGroups: MUSCLE_GROUPS, catalog: EXERCISE_CATALOG } = useExerciseCatalog()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState(exercise.name || '')
   const wrapRef = useRef(null)
@@ -74,7 +75,7 @@ export default function ExerciseRow({ exercise, onChange, onRemove, history, sho
                   ? { background: 'var(--color-accent)', color: '#0D0D0D' }
                   : { background: 'var(--color-surface-3)', color: 'var(--color-secondary)' }}
               >
-                {g.icon} {g.label}
+                {g.label}
               </button>
             )
           })}

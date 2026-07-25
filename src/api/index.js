@@ -49,6 +49,7 @@ export const portalApi = {
   ptRequest: (data) => api.post('/member-portal/pt-sessions/request', data),
   ptCancel: (id) => api.post(`/member-portal/pt-sessions/${id}/cancel`),
   equipment: (params = {}) => api.get('/member-portal/equipment', { params }),
+  exerciseCatalog: () => api.get('/member-portal/exercise-catalog'),
 
   workoutPlans: () => api.get('/member-portal/workout-plans'),
   workoutPlan: (id) => api.get(`/member-portal/workout-plans/${id}`),

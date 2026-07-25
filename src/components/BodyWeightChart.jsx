@@ -1,16 +1,26 @@
 /**
- * Simple SVG line chart for body-weight over time. No charting library —
- * keeps the PWA bundle lean. `points` is [{ date, bodyWeight }], any order.
+ * Simple SVG line chart for a metric over time. No charting library — keeps
+ * the PWA bundle lean. `points` is [{ date, [valueKey] }], any order.
+ * Defaults to body-weight display; pass `valueKey`/`unit`/labels to reuse
+ * this for other progress trends (e.g. strength).
  */
-export default function BodyWeightChart({ points }) {
+export default function BodyWeightChart({
+  points,
+  valueKey = 'bodyWeight',
+  unit = 'kg',
+  emptyMessage = 'Log body weight a couple more times to see your trend here.',
+  latestSuffix,
+  deltaSuffix = 'since first log',
+  positiveDirection = 'down', // 'down' = a decrease is the good direction (body weight); 'up' = an increase is good (strength)
+}) {
   const sorted = [...points]
-    .filter((p) => p.bodyWeight != null)
+    .filter((p) => p[valueKey] != null)
     .sort((a, b) => new Date(a.date) - new Date(b.date))
 
   if (sorted.length < 2) {
     return (
       <p className="py-6 text-xs text-center" style={{ color: 'var(--color-secondary)' }}>
-        Log body weight a couple more times to see your trend here.
+        {emptyMessage}
       </p>
     )
   }
@@ -23,15 +33,15 @@ export default function BodyWeightChart({ points }) {
   const padTop = 26
   const padBottom = 16
 
-  const weights = sorted.map((p) => p.bodyWeight)
-  const min = Math.min(...weights)
-  const max = Math.max(...weights)
+  const values = sorted.map((p) => p[valueKey])
+  const min = Math.min(...values)
+  const max = Math.max(...values)
   const range = max - min || 1
 
   const xStep = (width - padX * 2) / (sorted.length - 1)
   const coords = sorted.map((p, i) => {
     const x = padX + i * xStep
-    const y = padTop + (1 - (p.bodyWeight - min) / range) * (height - padTop - padBottom)
+    const y = padTop + (1 - (p[valueKey] - min) / range) * (height - padTop - padBottom)
     return { x, y, ...p }
   })
 
@@ -40,17 +50,17 @@ export default function BodyWeightChart({ points }) {
 
   const first = sorted[0]
   const last = sorted[sorted.length - 1]
-  const delta = +(last.bodyWeight - first.bodyWeight).toFixed(1)
+  const delta = +(last[valueKey] - first[valueKey]).toFixed(1)
 
   return (
     <div>
       <div className="flex items-baseline justify-between mb-2">
         <div>
-          <span className="text-2xl font-black" style={{ color: 'var(--color-primary)' }}>{last.bodyWeight}</span>
-          <span className="ml-1 text-xs" style={{ color: 'var(--color-secondary)' }}>kg latest</span>
+          <span className="text-2xl font-black" style={{ color: 'var(--color-primary)' }}>{last[valueKey]}</span>
+          <span className="ml-1 text-xs" style={{ color: 'var(--color-secondary)' }}>{unit} {latestSuffix || 'latest'}</span>
         </div>
-        <span className="text-xs font-semibold" style={{ color: delta <= 0 ? '#4ade80' : '#f87171' }}>
-          {delta > 0 ? '+' : ''}{delta}kg since first log
+        <span className="text-xs font-semibold" style={{ color: (positiveDirection === 'down' ? delta <= 0 : delta >= 0) ? '#4ade80' : '#f87171' }}>
+          {delta > 0 ? '+' : ''}{delta}{unit} {deltaSuffix}
         </span>
       </div>
 
@@ -64,7 +74,7 @@ export default function BodyWeightChart({ points }) {
         <path d={areaPath} fill="url(#bwFill)" stroke="none" />
         <path d={linePath} fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
         {coords.map((c, i) => {
-          const label = `${c.bodyWeight}kg`
+          const label = `${c[valueKey]}${unit}`
           // Rough monospace-ish width estimate so the pill hugs the text.
           const badgeW = label.length * 5.4 + 8
           const badgeH = 12

@@ -8,17 +8,18 @@ import { WorkoutLogFormModal, WorkoutLogDetail } from '../components/WorkoutLogF
 import BodyWeightChart from '../components/BodyWeightChart'
 import { readCache, writeCache } from '../lib/offline'
 import { istDateKey, istDateTime, fmtISTDate } from '../lib/dateIST'
-import { computePR, formatPR, buildExerciseMaxMap, sessionHasPR } from '../lib/exercisePR'
+import { computePR, formatPR, buildExerciseMaxMap, sessionHasPR, sortByMuscleGroup } from '../lib/exercisePR'
+import { useExerciseCatalog } from '../hooks/useExerciseCatalog'
 import { useBackableState } from '../hooks/useBackableState'
 import WorkoutVideoLibrary from '../components/WorkoutVideoLibrary'
 
 const TABS = ['Workout', 'Diet', 'PT Sessions', 'Videos']
 
 const LOG_FILTERS = [
-  { key: 'week', label: 'Last week', icon: '📅' },
-  { key: 'month', label: 'Last month', icon: '🗓️' },
-  { key: 'all', label: 'All time', icon: '♾️' },
-  { key: 'pr', label: 'PR', icon: '🏆' },
+  { key: 'week', label: 'Last week' },
+  { key: 'month', label: 'Last month' },
+  { key: 'all', label: 'All time' },
+  { key: 'pr', label: 'PR' },
 ]
 
 export default function Workouts() {
@@ -79,6 +80,7 @@ export default function Workouts() {
 }
 
 function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
+  const { muscleGroups } = useExerciseCatalog()
   const [plans, setPlans] = useState([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(null)
@@ -229,7 +231,7 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
       {/* ── Filter selectors: last week / last month / all time / PR ── */}
       {!logsLoading && (logs.length > 0 || weightPoints.length > 0) && (
         <div className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-0.5">
-          {LOG_FILTERS.map(({ key, label, icon }) => {
+          {LOG_FILTERS.map(({ key, label }) => {
             const active = logFilter === key
             return (
               <button key={key} onClick={() => toggleLogFilter(key)}
@@ -239,7 +241,7 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
                   color: active ? '#0D0D0D' : 'var(--color-secondary)',
                   border: `1px solid ${active ? 'var(--color-accent)' : 'var(--color-border)'}`,
                 }}>
-                {icon} {label}
+                {label}
               </button>
             )
           })}
@@ -802,7 +804,7 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
           <div className="p-4 card">
             <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>Exercises</h3>
             <div className="flex flex-col">
-              {selected.exercises.map((ex, i) => (
+              {sortByMuscleGroup(selected.exercises, muscleGroups).map((ex, i) => (
                 <div key={i} className="flex items-center justify-between py-2.5"
                   style={{ borderTop: i === 0 ? 'none' : '1px solid var(--color-border)' }}>
                   <div>
