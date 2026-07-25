@@ -106,98 +106,98 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
 
   return (
     <>
-    <div className="fixed inset-0 z-50 flex items-end justify-center px-0 sm:items-center sm:px-4"
-      style={{ background: 'rgba(0,0,0,0.6)' }}>
-      <div ref={modalScrollRef} className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-5 max-h-[92vh] overflow-y-auto relative animate-fade-up"
-        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
-        <button onClick={onClose} className="absolute text-2xl leading-none top-4 right-5" style={{ color: 'var(--color-secondary)' }}>×</button>
-        <h2 className="mb-4 text-lg font-bold" style={{ color: 'var(--color-primary)' }}>
-          {initial ? 'Edit workout' : '➕ Log a workout'}
-        </h2>
+      <div className="fixed inset-0 z-50 flex items-end justify-center px-0 sm:items-center sm:px-4"
+        style={{ background: 'rgba(0,0,0,0.6)' }}>
+        <div ref={modalScrollRef} className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-5 max-h-[92vh] overflow-y-auto relative animate-fade-up"
+          style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+          <button onClick={onClose} className="absolute text-2xl leading-none top-4 right-5" style={{ color: 'var(--color-secondary)' }}>×</button>
+          <h2 className="mb-4 text-lg font-bold" style={{ color: 'var(--color-primary)' }}>
+            {initial ? 'Edit workout' : '➕ Log a workout'}
+          </h2>
 
-        {error && (
-          <p className="px-3 py-2 mb-3 text-xs rounded-lg" style={{ background: 'rgba(248,113,113,0.1)', color: '#f87171' }}>{error}</p>
-        )}
+          {error && (
+            <p className="px-3 py-2 mb-3 text-xs rounded-lg" style={{ background: 'rgba(248,113,113,0.1)', color: '#f87171' }}>{error}</p>
+          )}
 
-        <div className="flex flex-col gap-3">
-          <LabeledInput label="Title">
-            <input type="text" value={form.title} onChange={set('title')} className="field-input" placeholder="Leg day, morning run…" />
-          </LabeledInput>
-
-          <div className="grid grid-cols-2 gap-3">
-            <LabeledInput label="Date & time">
-              <input type="datetime-local" value={form.when} onChange={set('when')} className="field-input" />
+          <div className="flex flex-col gap-3">
+            <LabeledInput label="Title">
+              <input type="text" value={form.title} onChange={set('title')} className="field-input" placeholder="Leg day, morning run…" />
             </LabeledInput>
-            <LabeledInput label="Duration (min)">
-              <input type="number" min="5" step="5" value={form.durationMinutes} onChange={set('durationMinutes')} className="field-input" />
-            </LabeledInput>
-          </div>
 
-          <LabeledInput label="Body weight (kg) — optional">
-            <input type="number" step="0.1" value={form.bodyWeight} onChange={set('bodyWeight')} className="field-input" placeholder="72.5" />
-          </LabeledInput>
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium" style={{ color: 'var(--color-secondary)' }}>Exercises</label>
-              <div className="flex items-center gap-3">
-                <button type="button" onClick={() => setShowCopyModal(true)} className="text-xs font-semibold" style={{ color: 'var(--color-secondary)' }}>
-                  📋 Copy from previous
-                </button>
-                <button type="button" ref={topAddBtnRef} onClick={addExercise} className="text-xs font-semibold" style={{ color: 'var(--color-accent)' }}>+ Add exercise</button>
-              </div>
+            <div className="grid grid-cols-2 gap-3">
+              <LabeledInput label="Date & time">
+                <input type="datetime-local" value={form.when} onChange={set('when')} className="field-input" />
+              </LabeledInput>
+              <LabeledInput label="Duration (min)">
+                <input type="number" min="5" step="5" value={form.durationMinutes} onChange={set('durationMinutes')} className="field-input" />
+              </LabeledInput>
             </div>
-            <div className="flex flex-col gap-2">
-              {form.exercises.map((ex, i) => (
-                <div key={i} ref={(el) => (exerciseRefs.current[i] = el)}>
-                  <ExerciseRow
-                    exercise={ex}
-                    history={history}
-                    showRemove={form.exercises.length > 1}
-                    onChange={(field, val) => updateExercise(i, field, val)}
-                    onRemove={() => removeExercise(i)}
-                  />
+
+            <LabeledInput label="Body weight (kg) — optional">
+              <input type="number" step="0.1" value={form.bodyWeight} onChange={set('bodyWeight')} className="field-input" placeholder="72.5" />
+            </LabeledInput>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-medium" style={{ color: 'var(--color-secondary)' }}>Exercises</label>
+                <div className="flex items-center gap-3">
+                  <button type="button" onClick={() => setShowCopyModal(true)} className="text-xs font-semibold" style={{ color: 'var(--color-secondary)' }}>
+                    📋 Copy from previous
+                  </button>
+                  <button type="button" ref={topAddBtnRef} onClick={addExercise} className="text-xs font-semibold" style={{ color: 'var(--color-accent)' }}>+ Add exercise</button>
                 </div>
-              ))}
-            </div>
-            {/* Second "Add exercise" affordance right after the list, so it's
+              </div>
+              <div className="flex flex-col gap-2">
+                {form.exercises.map((ex, i) => (
+                  <div key={i} ref={(el) => (exerciseRefs.current[i] = el)}>
+                    <ExerciseRow
+                      exercise={ex}
+                      history={history}
+                      showRemove={form.exercises.length > 1}
+                      onChange={(field, val) => updateExercise(i, field, val)}
+                      onRemove={() => removeExercise(i)}
+                    />
+                  </div>
+                ))}
+              </div>
+              {/* Second "Add exercise" affordance right after the list, so it's
                 always within reach without scrolling back up — only shown
                 once the original button up top has scrolled out of view. */}
-            {!topAddBtnVisible && (
-              <button type="button" onClick={addExercise}
-                className="w-full mt-2 py-2.5 text-xs font-semibold rounded-lg transition-colors"
-                style={{ color: 'var(--color-accent)', border: '1px dashed var(--color-accent)', background: 'rgba(200,241,53,0.05)' }}>
-                + Add exercise
+              {!topAddBtnVisible && (
+                <button type="button" onClick={addExercise}
+                  className="w-full mt-2 py-2.5 text-xs font-semibold rounded-lg transition-colors"
+                  style={{ color: 'var(--color-accent)', border: '1px dashed var(--color-accent)', background: 'rgba(200,241,53,0.05)' }}>
+                  + Add exercise
+                </button>
+              )}
+            </div>
+
+            <LabeledInput label="Notes — optional">
+              <textarea rows={2} value={form.notes} onChange={set('notes')} className="resize-none field-input" placeholder="How it felt, anything to remember…" />
+            </LabeledInput>
+
+            <p className="text-[11px]" style={{ color: 'var(--color-secondary)' }}>
+              🔥 Calories burned is estimated automatically from your body weight, duration, and the exercises above — same method used for PT sessions.
+            </p>
+
+            <div className="flex gap-3 pt-1">
+              <button onClick={onClose} className="flex-1 py-3 text-sm font-semibold transition-all rounded-xl"
+                style={{ background: 'var(--color-surface-3)', color: 'var(--color-primary)' }}>Cancel</button>
+              <button onClick={save} disabled={saving} className="flex-[2] py-3 text-sm font-bold transition-all rounded-xl disabled:opacity-60"
+                style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
+                {saving ? 'Saving…' : initial ? 'Update workout' : 'Save workout'}
               </button>
-            )}
-          </div>
-
-          <LabeledInput label="Notes — optional">
-            <textarea rows={2} value={form.notes} onChange={set('notes')} className="resize-none field-input" placeholder="How it felt, anything to remember…" />
-          </LabeledInput>
-
-          <p className="text-[11px]" style={{ color: 'var(--color-secondary)' }}>
-            🔥 Calories burned is estimated automatically from your body weight, duration, and the exercises above — same method used for PT sessions.
-          </p>
-
-          <div className="flex gap-3 pt-1">
-            <button onClick={onClose} className="flex-1 py-3 text-sm font-semibold transition-all rounded-xl"
-              style={{ background: 'var(--color-surface-3)', color: 'var(--color-primary)' }}>Cancel</button>
-            <button onClick={save} disabled={saving} className="flex-[2] py-3 text-sm font-bold transition-all rounded-xl disabled:opacity-60"
-              style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
-              {saving ? 'Saving…' : initial ? 'Update workout' : 'Save workout'}
-            </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-    {showCopyModal && (
-      <CopyExercisesModal
-        logs={(history || []).filter((l) => l._id !== initial?._id)}
-        onClose={() => setShowCopyModal(false)}
-        onCopy={copyExercises}
-      />
-    )}
+      {showCopyModal && (
+        <CopyExercisesModal
+          logs={(history || []).filter((l) => l._id !== initial?._id)}
+          onClose={() => setShowCopyModal(false)}
+          onCopy={copyExercises}
+        />
+      )}
     </>
   )
 }
@@ -208,6 +208,7 @@ export function WorkoutLogDetail({ log, history, onBack, onEdit, onDelete }) {
   const [deleting, setDeleting] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [showPR, setShowPR] = useState(false)
 
   async function handleDelete() {
     setDeleting(true)
@@ -251,31 +252,50 @@ export function WorkoutLogDetail({ log, history, onBack, onEdit, onDelete }) {
 
       {log.exercises?.length > 0 && (
         <div className="p-4 card">
-          <h3 className="mb-2 text-xs font-bold" style={{ color: 'var(--color-secondary)' }}>Exercises</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-bold" style={{ color: 'var(--color-secondary)' }}>Exercises</h3>
+            <button
+              onClick={() => setShowPR((v) => !v)}
+              className="text-[10px] font-bold px-2.5 py-1 rounded-full transition-all"
+              style={{
+                background: showPR ? 'rgba(168,85,247,0.15)' : 'var(--color-surface-2)',
+                color: showPR ? '#a855f7' : 'var(--color-secondary)',
+                border: `1px solid ${showPR ? 'rgba(168,85,247,0.4)' : 'var(--color-border)'}`,
+              }}
+            >
+              List PRs
+            </button>
+          </div>
           <div className="flex flex-col gap-1">
-            {sortByMuscleGroup(log.exercises, muscleGroups).map((ex, i) => (
-              <div key={i} className="flex items-center justify-between py-2 text-sm"
-                style={{ borderTop: i === 0 ? 'none' : '1px solid var(--color-border)' }}>
-                <span className="flex items-center gap-2" style={{ color: 'var(--color-primary)' }}>
-                  {ex.name}
-                  {computePR(history, ex.name) && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                      style={{ background: 'rgba(251,191,36,0.12)', color: '#fbbf24' }}>
-                      🏆 {formatPR(computePR(history, ex.name))}
-                    </span>
-                  )}
-                </span>
-                <div className="flex gap-2 text-xs" style={{ color: 'var(--color-secondary)' }}>
-                  {ex.sets && <span>{ex.sets} sets</span>}
-                  {ex.reps && <span>× {ex.reps}</span>}
-                  {ex.weight != null && (
-                    <span className="font-semibold" style={{ color: 'var(--color-accent)' }}>
-                      @ {ex.weight}kg
-                    </span>
-                  )}
+            {sortByMuscleGroup(log.exercises, muscleGroups).map((ex, i) => {
+              const pr = computePR(history, ex.name)
+              const weightIsPR = pr != null && ex.weight != null && Number(ex.weight) === pr.weight
+              return (
+                <div key={i} className="flex items-center justify-between py-2 text-sm"
+                  style={{ borderTop: i === 0 ? 'none' : '1px solid var(--color-border)' }}>
+                  <span style={{ color: 'var(--color-primary)' }}>{ex.name}</span>
+                  <div className="flex flex-col items-end gap-0.5">
+                    <div className="flex gap-2 text-xs" style={{ color: 'var(--color-secondary)' }}>
+                      {ex.sets && <span>{ex.sets} sets</span>}
+                      {ex.reps && <span>× {ex.reps}</span>}
+                      {ex.weight != null && (
+                        <span className="font-semibold" style={{ color: weightIsPR ? '#a855f7' : 'var(--color-accent)' }}>
+                          @ {ex.weight}kg
+                        </span>
+                      )}
+                    </div>
+                    {/* PR weight, shown below the logged weight — only on
+                        request (Show PR), since the weight itself already
+                        turns purple when it *is* the PR. */}
+                    {showPR && pr && (
+                      <span className="text-[10px] font-bold" style={{ color: '#a855f7' }}>
+                        PR {formatPR(pr)}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

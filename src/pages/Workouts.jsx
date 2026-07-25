@@ -569,7 +569,7 @@ function PTPlanCard({ plan }) {
         </span>
       </div>
       <div className="w-full h-2 overflow-hidden rounded-full" style={{ background: 'var(--color-surface-3)' }}>
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: '#9333ea' }} />
+        <div className="h-full transition-all rounded-full" style={{ width: `${pct}%`, background: '#9333ea' }} />
       </div>
 
       <div className="flex flex-wrap gap-3 mt-3 text-xs" style={{ color: 'var(--color-secondary)' }}>
