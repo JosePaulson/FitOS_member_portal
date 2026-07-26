@@ -74,13 +74,12 @@ export default function Workouts() {
           onConsumedInitialSession={() => setPendingSessionId(null)}
         />
       )}
-      {tab === 3 && <WorkoutVideoLibrary />}
+      {tab === 3 && <WorkoutVideoLibrary onClose={() => setTab(0)} />}
     </div>
   )
 }
 
 function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
-  const { muscleGroups } = useExerciseCatalog()
   const [plans, setPlans] = useState([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(null)
@@ -569,7 +568,7 @@ function PTPlanCard({ plan }) {
         </span>
       </div>
       <div className="w-full h-2 overflow-hidden rounded-full" style={{ background: 'var(--color-surface-3)' }}>
-        <div className="h-full transition-all rounded-full" style={{ width: `${pct}%`, background: '#9333ea' }} />
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: '#9333ea' }} />
       </div>
 
       <div className="flex flex-wrap gap-3 mt-3 text-xs" style={{ color: 'var(--color-secondary)' }}>
@@ -599,6 +598,7 @@ function NoPTPlanCard({ catalog }) {
 }
 
 function PTTab({ initialSessionId, onConsumedInitialSession }) {
+  const { muscleGroups } = useExerciseCatalog()
   const cached = readCache('pt:sessions')
   const [sessions, setSessions] = useState(cached?.sessions ?? [])
   const [progress, setProgress] = useState(cached?.progress ?? [])
@@ -607,6 +607,7 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
   const [catalog, setCatalog] = useState(cached?.catalog ?? null)
   const [loading, setLoading] = useState(cached === null)
   const [selected, setSelected] = useState(null)
+  const [showPR, setShowPR] = useState(false)
   const [ackLoading, setAckLoading] = useState(null)
   const [ackError, setAckError] = useState('')
   const [showBooking, setShowBooking] = useState(false)
@@ -802,36 +803,55 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
         {/* Exercises */}
         {selected.exercises?.length > 0 && (
           <div className="p-4 card">
-            <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>Exercises</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold" style={{ color: 'var(--color-primary)' }}>Exercises</h3>
+              <button
+                onClick={() => setShowPR((v) => !v)}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-full transition-all"
+                style={{
+                  background: showPR ? 'rgba(168,85,247,0.15)' : 'var(--color-surface-2)',
+                  color: showPR ? '#a855f7' : 'var(--color-secondary)',
+                  border: `1px solid ${showPR ? 'rgba(168,85,247,0.4)' : 'var(--color-border)'}`,
+                }}
+              >
+                {showPR ? 'Hide PR' : 'Show PR'}
+              </button>
+            </div>
             <div className="flex flex-col">
-              {sortByMuscleGroup(selected.exercises, muscleGroups).map((ex, i) => (
-                <div key={i} className="flex items-center justify-between py-2.5"
-                  style={{ borderTop: i === 0 ? 'none' : '1px solid var(--color-border)' }}>
-                  <div>
-                    <p className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--color-primary)' }}>
-                      {ex.name}
-                      {computePR(sessions, ex.name) && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                          style={{ background: 'rgba(251,191,36,0.12)', color: '#fbbf24' }}>
-                          🏆 {formatPR(computePR(sessions, ex.name))}
+              {sortByMuscleGroup(selected.exercises, muscleGroups).map((ex, i) => {
+                const pr = computePR(sessions, ex.name)
+                const weightIsPR = pr != null && ex.weight != null && Number(ex.weight) === pr.weight
+                return (
+                  <div key={i} className="flex items-center justify-between py-2.5"
+                    style={{ borderTop: i === 0 ? 'none' : '1px solid var(--color-border)' }}>
+                    <div>
+                      <p className="text-sm font-medium" style={{ color: 'var(--color-primary)' }}>{ex.name}</p>
+                      {ex.notes && (
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--color-secondary)' }}>{ex.notes}</p>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-end gap-0.5">
+                      <div className="flex gap-2 text-xs" style={{ color: 'var(--color-secondary)' }}>
+                        {ex.sets && <span>{ex.sets} sets</span>}
+                        {ex.reps && <span>× {ex.reps}</span>}
+                        {ex.weight && (
+                          <span className="font-semibold" style={{ color: weightIsPR ? '#a855f7' : 'var(--color-accent)' }}>
+                            @ {ex.weight}kg
+                          </span>
+                        )}
+                      </div>
+                      {/* PR weight, shown below the logged weight — only on
+                          request (Show PR), since the weight itself already
+                          turns purple when it *is* the PR. */}
+                      {showPR && pr && (
+                        <span className="text-[10px] font-bold" style={{ color: '#a855f7' }}>
+                          PR {formatPR(pr)}
                         </span>
                       )}
-                    </p>
-                    {ex.notes && (
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--color-secondary)' }}>{ex.notes}</p>
-                    )}
+                    </div>
                   </div>
-                  <div className="flex gap-2 text-xs" style={{ color: 'var(--color-secondary)' }}>
-                    {ex.sets && <span>{ex.sets} sets</span>}
-                    {ex.reps && <span>× {ex.reps}</span>}
-                    {ex.weight && (
-                      <span className="font-semibold" style={{ color: 'var(--color-accent)' }}>
-                        @ {ex.weight}kg
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}
@@ -1054,7 +1074,7 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
             const needsAck = !s.acknowledgedByMember &&
               !['cancelled', 'pending', 'declined'].includes(s.status) && isPast
             return (
-              <button key={s._id} onClick={() => { setSelected(s); setAckError('') }}
+              <button key={s._id} onClick={() => { setSelected(s); setAckError(''); setShowPR(false) }}
                 className="w-full p-4 text-left transition-all card"
                 style={{ borderColor: needsAck ? 'rgba(251,191,36,0.35)' : 'var(--color-border)' }}
                 onMouseEnter={(e) => e.currentTarget.style.borderColor = 'rgba(200,241,53,0.25)'}

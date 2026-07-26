@@ -50,6 +50,7 @@ export const portalApi = {
   ptCancel: (id) => api.post(`/member-portal/pt-sessions/${id}/cancel`),
   equipment: (params = {}) => api.get('/member-portal/equipment', { params }),
   exerciseCatalog: () => api.get('/member-portal/exercise-catalog'),
+  workoutLibrary: (params = {}) => api.get('/member-portal/workout-library', { params }),
 
   workoutPlans: () => api.get('/member-portal/workout-plans'),
   workoutPlan: (id) => api.get(`/member-portal/workout-plans/${id}`),

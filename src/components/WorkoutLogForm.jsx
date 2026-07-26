@@ -263,7 +263,7 @@ export function WorkoutLogDetail({ log, history, onBack, onEdit, onDelete }) {
                 border: `1px solid ${showPR ? 'rgba(168,85,247,0.4)' : 'var(--color-border)'}`,
               }}
             >
-              List PRs
+              {showPR ? 'Hide PR' : 'Show PR'}
             </button>
           </div>
           <div className="flex flex-col gap-1">

@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { MUSCLE_GROUPS, WORKOUT_VIDEOS, REST_SECONDS } from '../data/workoutVideos'
+import { portalApi } from '../api/index'
+import { useExerciseCatalog } from '../hooks/useExerciseCatalog'
+
+const REST_SECONDS = 45
+const CONTROLS_HIDE_MS = 1000
 
 const S = {
   primary: 'var(--color-primary)',
@@ -13,18 +17,67 @@ const S = {
 const RING_RADIUS = 54
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
 
-export default function WorkoutVideoLibrary() {
-  const [group, setGroup] = useState(MUSCLE_GROUPS[0].key)
+/**
+ * Full-screen, edge-to-edge exercise video player (Videos tab) — modeled
+ * after the immersive single-exercise player pattern popularized by apps
+ * like Cult: full-bleed video, minimal floating chrome over gradient
+ * scrims, tap-to-reveal transport controls, and a compact sticky action
+ * bar rather than a scrollable page of controls.
+ */
+export default function WorkoutVideoLibrary({ onClose }) {
+  const { muscleGroups: MUSCLE_GROUPS, loading: catalogLoading } = useExerciseCatalog()
+
+  // Videos, keyed by category — sourced from the gym's Workout Library
+  // (admin-managed), so this stays in sync with whatever categories and
+  // exercises the admin has added. Only entries with an actual video are
+  // shown here — an image-only library entry has nothing for the player.
+  const [videosByCategory, setVideosByCategory] = useState({})
+  const [videosLoading, setVideosLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    portalApi.workoutLibrary()
+      .then(({ data }) => {
+        if (cancelled) return
+        const grouped = {}
+        for (const item of data) {
+          if (!item.videoUrl || !item.category) continue
+          if (!grouped[item.category]) grouped[item.category] = []
+          grouped[item.category].push(item)
+        }
+        setVideosByCategory(grouped)
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setVideosLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  const [group, setGroup] = useState(null)
   const [index, setIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [phase, setPhase] = useState('exercise') // exercise | resting | group-complete
   const [restLeft, setRestLeft] = useState(REST_SECONDS)
   const [completed, setCompleted] = useState(() => new Set())
 
+  // Transport-control visibility — the play/pause button fades out ~1s
+  // after it's tapped (while playing), and any tap on the player brings
+  // it back. Paused always stays visible so there's always a way back in.
+  const [showControls, setShowControls] = useState(true)
+  const hideTimerRef = useRef(null)
+
   const videoRef = useRef(null)
   const timerRef = useRef(null)
 
-  const videos = WORKOUT_VIDEOS[group] || []
+  // Default to the first category that actually has videos once both the
+  // catalog and the library have loaded.
+  useEffect(() => {
+    if (group || catalogLoading || videosLoading) return
+    const firstWithVideos = MUSCLE_GROUPS.find((g) => (videosByCategory[g.key] || []).length > 0)
+    setGroup((firstWithVideos || MUSCLE_GROUPS[0])?.key || null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogLoading, videosLoading])
+
+  const videos = (group && videosByCategory[group]) || []
   const current = videos[index]
   const isLast = index >= videos.length - 1
 
@@ -33,7 +86,9 @@ export default function WorkoutVideoLibrary() {
     setIndex(0)
     setPhase('exercise')
     setPlaying(false)
+    setShowControls(true)
     clearRestTimer()
+    clearHideTimer()
   }, [group])
 
   // Keep the <video> element in sync with exercise changes.
@@ -53,11 +108,44 @@ export default function WorkoutVideoLibrary() {
     else el.pause()
   }, [playing])
 
+  useEffect(() => clearHideTimer, [])
+
   function clearRestTimer() {
     if (timerRef.current) {
       clearInterval(timerRef.current)
       timerRef.current = null
     }
+  }
+
+  function clearHideTimer() {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current)
+      hideTimerRef.current = null
+    }
+  }
+
+  function armHideTimer() {
+    clearHideTimer()
+    hideTimerRef.current = setTimeout(() => setShowControls(false), CONTROLS_HIDE_MS)
+  }
+
+  // Tapping anywhere on the player: if controls are hidden, the tap just
+  // reveals them again. If they're already visible, the tap is a genuine
+  // play/pause toggle — matching the "tap once to bring it back, tap
+  // again to act on it" pattern most video apps use.
+  function handlePlayerTap() {
+    if (phase !== 'exercise') return
+    if (!showControls) {
+      setShowControls(true)
+      if (playing) armHideTimer()
+      return
+    }
+    setPlaying((p) => {
+      const next = !p
+      if (next) armHideTimer()
+      else clearHideTimer()
+      return next
+    })
   }
 
   // Rest countdown — ticks every second, auto-advances when it hits zero.
@@ -91,7 +179,7 @@ export default function WorkoutVideoLibrary() {
 
   function markComplete() {
     if (!current) return
-    setCompleted((prev) => new Set(prev).add(current.id))
+    setCompleted((prev) => new Set(prev).add(current._id))
     setPlaying(false)
     setPhase('resting')
   }
@@ -129,193 +217,213 @@ export default function WorkoutVideoLibrary() {
   }
 
   const groupCompletedCount = useMemo(
-    () => videos.filter((v) => completed.has(v.id)).length,
+    () => videos.filter((v) => completed.has(v._id)).length,
     [videos, completed]
   )
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* Muscle group chips */}
-      <div className="flex gap-2 pb-1 overflow-x-auto -mx-5 px-5" style={{ scrollbarWidth: 'none' }}>
-        {MUSCLE_GROUPS.map((g) => {
-          const active = g.key === group
-          return (
-            <button
-              key={g.key}
-              onClick={() => pickGroup(g.key)}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-full whitespace-nowrap transition-all shrink-0"
-              style={active
-                ? { background: S.accent, color: '#0D0D0D' }
-                : { background: S.surface2, color: S.secondary, border: `1px solid ${S.border}` }}
-            >
-              <span>{g.icon}</span>{g.label}
-            </button>
-          )
-        })}
+    <div className="fixed inset-0 z-[100] flex flex-col bg-black">
+      {/* Top bar — close + category chips, floats over the video with a
+          gradient scrim so it stays legible over any footage. */}
+      <div
+        className="absolute top-0 inset-x-0 z-20 flex flex-col gap-2.5 px-4 pb-6"
+        style={{
+          paddingTop: 'calc(10px + env(safe-area-inset-top, 0px))',
+          background: 'linear-gradient(to bottom, rgba(0,0,0,0.75), transparent)',
+        }}
+      >
+        <div className="flex items-center justify-between">
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="flex items-center justify-center w-9 h-9 transition-all rounded-full active:scale-90"
+            style={{ background: 'rgba(255,255,255,0.12)', color: '#fff', backdropFilter: 'blur(4px)' }}
+          >
+            <CloseIcon />
+          </button>
+          {current && (
+            <span className="text-xs font-bold tracking-wide" style={{ color: 'rgba(255,255,255,0.85)' }}>
+              {index + 1} / {videos.length}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2 overflow-x-auto -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+          {MUSCLE_GROUPS.map((g) => {
+            const active = g.key === group
+            return (
+              <button
+                key={g.key}
+                onClick={() => pickGroup(g.key)}
+                className="px-3.5 py-1.5 text-xs font-semibold rounded-full whitespace-nowrap transition-all shrink-0"
+                style={active
+                  ? { background: S.accent, color: '#0D0D0D' }
+                  : { background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(4px)' }}
+              >
+                {g.label}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
-      {!current ? (
-        <div className="py-16 text-sm text-center card" style={{ color: S.secondary }}>
-          No videos in this category yet.
-        </div>
-      ) : (
-        <>
-          {/* Player card */}
-          <div
-            className="relative overflow-hidden rounded-2xl"
-            style={{
-              background: `radial-gradient(120% 100% at 50% 0%, rgba(200,241,53,0.10), transparent 60%), ${S.surface2}`,
-              border: `1px solid ${S.border}`,
-            }}
-          >
-            <div className="relative aspect-[4/5] sm:aspect-video bg-black">
-              <video
-                ref={videoRef}
-                src={current.videoUrl}
-                loop
-                muted
-                playsInline
-                className="absolute inset-0 object-cover w-full h-full"
-                style={{ opacity: phase === 'resting' ? 0.25 : 1, transition: 'opacity 0.3s' }}
-                onClick={() => phase === 'exercise' && setPlaying((p) => !p)}
-              />
+      {/* Full-bleed video area */}
+      <div className="relative flex-1 min-h-0 bg-black">
+        {catalogLoading || videosLoading ? (
+          <div className="flex items-center justify-center w-full h-full">
+            <span className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(255,255,255,0.2)', borderTopColor: '#fff' }} />
+          </div>
+        ) : !current ? (
+          <div className="flex items-center justify-center w-full h-full px-8 text-sm text-center" style={{ color: S.secondary }}>
+            No videos in this category yet.
+          </div>
+        ) : (
+          <>
+            <video
+              ref={videoRef}
+              src={current.videoUrl}
+              loop
+              muted
+              playsInline
+              className="absolute inset-0 object-cover w-full h-full"
+              style={{ opacity: phase === 'resting' ? 0.25 : 1, transition: 'opacity 0.3s' }}
+            />
 
-              {/* Exercise phase: center play/pause button */}
-              {phase === 'exercise' && (
-                <button
-                  onClick={() => setPlaying((p) => !p)}
+            {/* Full-cover tap target — always present so a tap anywhere on
+                the player reveals the transport control; the icon itself
+                fades independently via the inner span below. */}
+            {phase === 'exercise' && (
+              <button
+                onClick={handlePlayerTap}
+                className="absolute inset-0"
+                aria-label={playing ? 'Pause' : 'Play (loops automatically)'}
+              >
+                <span
                   className="absolute inset-0 flex items-center justify-center"
-                  aria-label={playing ? 'Pause' : 'Play (loops automatically)'}
+                  style={{ opacity: showControls ? 1 : 0, transition: 'opacity 0.25s' }}
                 >
                   <span
-                    className="flex items-center justify-center transition-transform rounded-full w-16 h-16 active:scale-90"
+                    className="flex items-center justify-center transition-transform rounded-full w-14 h-14 active:scale-90"
                     style={{
-                      background: playing ? 'rgba(0,0,0,0.35)' : S.accent,
+                      background: playing ? 'rgba(0,0,0,0.4)' : S.accent,
                       color: playing ? '#fff' : '#0D0D0D',
                       boxShadow: playing ? 'none' : '0 8px 24px rgba(200,241,53,0.35)',
-                      backdropFilter: playing ? 'blur(4px)' : 'none',
+                      backdropFilter: 'blur(4px)',
                     }}
                   >
                     {playing ? <PauseIcon /> : <PlayIcon />}
                   </span>
-                </button>
-              )}
-
-              {/* Loop badge */}
-              {phase === 'exercise' && playing && (
-                <span
-                  className="absolute px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 top-3 left-3"
-                  style={{ background: 'rgba(0,0,0,0.5)', color: '#fff', backdropFilter: 'blur(4px)' }}
-                >
-                  🔁 LOOPING
                 </span>
-              )}
+              </button>
+            )}
 
-              {/* Exercise index badge */}
-              <span
-                className="absolute px-2.5 py-1 rounded-full text-[10px] font-bold top-3 right-3"
-                style={{ background: 'rgba(0,0,0,0.5)', color: '#fff', backdropFilter: 'blur(4px)' }}
+            {/* Bottom info scrim — exercise name + optional clip length/cue,
+                floating over the video like the player chip in Cult's
+                exercise screen. */}
+            {phase === 'exercise' && (
+              <div
+                className="absolute bottom-0 inset-x-0 z-10 flex flex-col gap-2 px-5 pt-10 pb-4 pointer-events-none"
+                style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)' }}
               >
-                {index + 1} / {videos.length}
-              </span>
-
-              {/* Resting overlay */}
-              {phase === 'resting' && (
-                <RestOverlay restLeft={restLeft} onSkip={skipRest} nextName={!isLast ? videos[index + 1]?.name : null} />
-              )}
-
-              {/* Group complete overlay */}
-              {phase === 'group-complete' && (
-                <GroupCompleteOverlay
-                  groupLabel={MUSCLE_GROUPS.find((g) => g.key === group)?.label}
-                  count={videos.length}
-                  onReplay={replayGroup}
-                  groups={MUSCLE_GROUPS}
-                  currentGroup={group}
-                  onPickGroup={pickGroup}
-                />
-              )}
-            </div>
-
-            {/* Exercise info */}
-            {phase !== 'group-complete' && (
-              <div className="flex flex-col gap-3 p-5">
                 <div className="flex items-start justify-between gap-3">
-                  <h2 className="text-lg font-bold leading-snug" style={{ color: S.primary }}>{current.name}</h2>
-                  {completed.has(current.id) && (
+                  <h2 className="text-lg font-bold leading-snug" style={{ color: '#fff' }}>{current.name}</h2>
+                  {completed.has(current._id) && (
                     <span
                       className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full"
-                      style={{ background: 'rgba(200,241,53,0.12)', color: S.accent, border: '1px solid rgba(200,241,53,0.25)' }}
+                      style={{ background: 'rgba(200,241,53,0.18)', color: S.accent, border: '1px solid rgba(200,241,53,0.3)' }}
                     >
                       ✓ Done
                     </span>
                   )}
                 </div>
-
-                <div className="flex gap-2">
-                  <Pill>{current.sets}</Pill>
-                  <Pill>{current.reps}</Pill>
-                </div>
-
-                <p className="text-sm leading-relaxed" style={{ color: S.secondary }}>{current.cue}</p>
+                {current.videoDurationSec && (
+                  <Pill>{Math.round(current.videoDurationSec)}s clip</Pill>
+                )}
+                {current.description && (
+                  <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.75)' }}>{current.description}</p>
+                )}
               </div>
             )}
-          </div>
 
-          {/* Progress dots */}
-          <div className="flex items-center justify-center gap-2">
+            {/* Resting overlay */}
+            {phase === 'resting' && (
+              <RestOverlay restLeft={restLeft} onSkip={skipRest} nextName={!isLast ? videos[index + 1]?.name : null} />
+            )}
+
+            {/* Group complete overlay */}
+            {phase === 'group-complete' && (
+              <GroupCompleteOverlay
+                groupLabel={MUSCLE_GROUPS.find((g) => g.key === group)?.label}
+                count={videos.length}
+                onReplay={replayGroup}
+                onClose={onClose}
+                groups={MUSCLE_GROUPS.filter((g) => (videosByCategory[g.key] || []).length > 0)}
+                currentGroup={group}
+                onPickGroup={pickGroup}
+              />
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Sticky bottom action bar — compact, icon-led prev/next flanking
+          the primary action, kept small and out of the way of the video. */}
+      {current && phase === 'exercise' && (
+        <div
+          className="z-20 flex flex-col gap-2.5 px-4 pt-2.5 shrink-0"
+          style={{
+            paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))',
+            background: S.surface2,
+            borderTop: `1px solid ${S.border}`,
+          }}
+        >
+          <div className="flex items-center justify-center gap-1.5">
             {videos.map((v, i) => (
               <button
-                key={v.id}
-                onClick={() => { clearRestTimer(); setPhase('exercise'); setPlaying(false); setIndex(i) }}
+                key={v._id}
+                onClick={() => { clearRestTimer(); setPhase('exercise'); setPlaying(false); setShowControls(true); setIndex(i) }}
                 className="rounded-full transition-all"
                 style={{
-                  width: i === index ? 22 : 8,
-                  height: 8,
-                  background: completed.has(v.id) ? S.accent : i === index ? S.primary : S.border,
+                  width: i === index ? 18 : 6,
+                  height: 6,
+                  background: completed.has(v._id) ? S.accent : i === index ? S.primary : S.border,
                 }}
                 aria-label={`Go to exercise ${i + 1}`}
               />
             ))}
           </div>
 
-          {/* Prev / Next */}
-          {phase === 'exercise' && (
-            <div className="flex items-center gap-3">
-              <button
-                onClick={goPrev}
-                disabled={index === 0}
-                className="flex items-center justify-center flex-1 gap-2 py-3 text-sm font-semibold rounded-xl disabled:opacity-35 transition-all"
-                style={{ background: S.surface2, border: `1px solid ${S.border}`, color: S.primary }}
-              >
-                ← Prev
-              </button>
-              <button
-                onClick={goNext}
-                disabled={isLast}
-                className="flex items-center justify-center flex-1 gap-2 py-3 text-sm font-semibold rounded-xl disabled:opacity-35 transition-all"
-                style={{ background: S.surface2, border: `1px solid ${S.border}`, color: S.primary }}
-              >
-                Next →
-              </button>
-            </div>
-          )}
-
-          {/* Mark complete */}
-          {phase === 'exercise' && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={goPrev}
+              disabled={index === 0}
+              aria-label="Previous exercise"
+              className="flex items-center justify-center w-10 h-10 text-base font-bold transition-all rounded-full shrink-0 disabled:opacity-30"
+              style={{ background: S.surface3, border: `1px solid ${S.border}`, color: S.primary }}
+            >
+              ‹
+            </button>
             <button
               onClick={markComplete}
-              className="py-3.5 text-sm font-bold rounded-xl transition-all active:scale-[0.98]"
-              style={{ background: S.accent, color: '#0D0D0D', boxShadow: '0 8px 20px rgba(200,241,53,0.25)' }}
+              className="flex-1 py-2.5 text-xs font-bold rounded-xl transition-all active:scale-[0.98]"
+              style={{ background: S.accent, color: '#0D0D0D', boxShadow: '0 6px 16px rgba(200,241,53,0.25)' }}
             >
-              {completed.has(current.id) ? '✓ Completed — rest again' : 'Mark complete & rest 45s'}
+              {completed.has(current._id) ? '✓ Completed — rest again' : `Mark complete · rest ${REST_SECONDS}s`}
             </button>
-          )}
+            <button
+              onClick={goNext}
+              disabled={isLast}
+              aria-label="Next exercise"
+              className="flex items-center justify-center w-10 h-10 text-base font-bold transition-all rounded-full shrink-0 disabled:opacity-30"
+              style={{ background: S.surface3, border: `1px solid ${S.border}`, color: S.primary }}
+            >
+              ›
+            </button>
+          </div>
 
-          <p className="text-xs text-center" style={{ color: S.secondary }}>
+          <p className="text-[11px] text-center" style={{ color: S.secondary }}>
             {groupCompletedCount} of {videos.length} {MUSCLE_GROUPS.find((g) => g.key === group)?.label.toLowerCase()} exercises done
           </p>
-        </>
+        </div>
       )}
     </div>
   )
@@ -355,22 +463,22 @@ function RestOverlay({ restLeft, onSkip, nextName }) {
 }
 
 /* ── Group complete overlay ───────────────────────────────────────────────── */
-function GroupCompleteOverlay({ groupLabel, count, onReplay, groups, currentGroup, onPickGroup }) {
+function GroupCompleteOverlay({ groupLabel, count, onReplay, onClose, groups, currentGroup, onPickGroup }) {
   const nextGroup = groups[(groups.findIndex((g) => g.key === currentGroup) + 1) % groups.length]
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center" style={{ background: 'rgba(13,13,13,0.85)' }}>
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center" style={{ background: 'rgba(13,13,13,0.92)' }}>
       <span className="text-5xl">🎉</span>
       <div>
         <p className="text-lg font-bold" style={{ color: '#fff' }}>{groupLabel} complete!</p>
         <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.65)' }}>You finished all {count} exercises.</p>
       </div>
-      <div className="flex flex-col w-full gap-2 mt-2">
+      <div className="flex flex-col w-full max-w-xs gap-2 mt-2">
         <button
           onClick={() => onPickGroup(nextGroup.key)}
           className="py-2.5 text-sm font-bold rounded-xl"
           style={{ background: S.accent, color: '#0D0D0D' }}
         >
-          {nextGroup.icon} Try {nextGroup.label} next
+          Try {nextGroup.label} next
         </button>
         <button
           onClick={onReplay}
@@ -378,6 +486,13 @@ function GroupCompleteOverlay({ groupLabel, count, onReplay, groups, currentGrou
           style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }}
         >
           Replay {groupLabel}
+        </button>
+        <button
+          onClick={onClose}
+          className="py-2.5 text-sm font-semibold rounded-xl"
+          style={{ color: 'rgba(255,255,255,0.6)' }}
+        >
+          Exit
         </button>
       </div>
     </div>
@@ -403,5 +518,12 @@ function PlayIcon() {
 function PauseIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z" /></svg>
+  )
+}
+function CloseIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
   )
 }

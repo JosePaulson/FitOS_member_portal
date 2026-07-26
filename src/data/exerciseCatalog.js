@@ -1,7 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────
 // Exercise name catalog, organized by muscle group. Powers the "Exercise
-// name" autocomplete suggestions when logging a workout. Same key set as
-// the Workout Videos feature (data/workoutVideos.js) for consistency.
+// name" autocomplete suggestions when logging a workout. This static file
+// is now only the offline/error fallback for useExerciseCatalog — the
+// live catalog (and the Workout Videos feature's categories) comes from
+// the server, kept in sync with the admin-managed exercise catalog.
 // ─────────────────────────────────────────────────────────────────────────
 
 export const MUSCLE_GROUPS = [
