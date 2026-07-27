@@ -4,6 +4,7 @@ import Layout       from './components/layout/Layout'
 import PrivateRoute from './components/PrivateRoute'
 import Spinner      from './components/ui/Spinner'
 import UpdateChecker from './components/UpdateChecker'
+import CookieConsentBanner from './components/CookieConsentBanner'
 import Login    from './pages/Login'
 import Home     from './pages/Home'
 import Plans    from './pages/Plans'
@@ -14,6 +15,11 @@ import BMI      from './pages/BMI'
 import Chat     from './pages/Chat'
 import Equipment from './pages/Equipment'
 import Support from './pages/Support'
+import LegalHub       from './pages/legal/LegalHub'
+import TermsOfService from './pages/legal/TermsOfService'
+import PrivacyPolicy  from './pages/legal/PrivacyPolicy'
+import RefundPolicy   from './pages/legal/RefundPolicy'
+import CookiePolicy   from './pages/legal/CookiePolicy'
 
 export default function App() {
   const { loading } = useMemberAuth()
@@ -25,6 +31,7 @@ export default function App() {
           <Spinner />
         </div>
         <UpdateChecker />
+        <CookieConsentBanner />
       </>
     )
   }
@@ -33,6 +40,13 @@ export default function App() {
     <>
       <Routes>
         <Route path="/login" element={<Login />} />
+
+        {/* ── Legal pages — public, work whether signed in or not ── */}
+        <Route path="/legal" element={<LegalHub />} />
+        <Route path="/legal/terms" element={<TermsOfService />} />
+        <Route path="/legal/privacy-policy" element={<PrivacyPolicy />} />
+        <Route path="/legal/refund-policy" element={<RefundPolicy />} />
+        <Route path="/legal/cookie-policy" element={<CookiePolicy />} />
 
         <Route
           path="/"
@@ -52,6 +66,7 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <UpdateChecker />
+      <CookieConsentBanner />
     </>
   )
 }

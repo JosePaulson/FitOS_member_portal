@@ -33,7 +33,7 @@ The backend must be running on port 5000 (Vite proxies `/api` automatically).
 
 Members log in with:
 
-1. **Gym ID** — the gym's subdomain (e.g. `ironzone` for `ironzone.fitos.in`)
+1. **Gym ID** — the gym's subdomain (e.g. `ironzone` for `ironzone.f8os.in`)
 2. **Phone number** — the one on file at the gym
 3. **PIN** — a 4–6 digit PIN set by gym staff
 
@@ -79,8 +79,8 @@ Member tokens are signed with **MEMBER_JWT_SECRET** (separate from staff JWT_SEC
 Deploy as a separate static site (Vercel, Netlify, or S3+CloudFront):
 
 ```bash
-VITE_API_URL=https://api.fitos.in/api npm run build
+VITE_API_URL=https://api.f8os.in/api npm run build
 # Upload dist/ to your static host
 ```
 
-Suggested domain: `members.fitos.in` or `app.fitos.in`
+Suggested domain: `members.f8os.in` or `app.f8os.in`

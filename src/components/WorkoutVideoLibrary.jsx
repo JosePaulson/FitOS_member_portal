@@ -2,8 +2,26 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { portalApi } from '../api/index'
 import { useExerciseCatalog } from '../hooks/useExerciseCatalog'
 
-const REST_SECONDS = 45
+const REST_DEFAULT_SECONDS = 45
+const REST_MIN_SECONDS = 30
+const REST_MAX_SECONDS = 180
+const REST_DURATION_STORAGE_KEY = 'fitos_member_rest_duration'
 const CONTROLS_HIDE_MS = 1000
+
+function clampRestDuration(value) {
+  return Math.min(REST_MAX_SECONDS, Math.max(REST_MIN_SECONDS, value))
+}
+
+// The member's last-chosen rest length, remembered as their default for
+// next time — falls back to REST_DEFAULT_SECONDS if nothing's stored yet
+// (or the stored value is somehow out of the allowed 30s–3min range).
+function readStoredRestDuration() {
+  try {
+    const raw = Number(localStorage.getItem(REST_DURATION_STORAGE_KEY))
+    if (Number.isFinite(raw) && raw > 0) return clampRestDuration(raw)
+  } catch { /* ignore */ }
+  return REST_DEFAULT_SECONDS
+}
 
 const S = {
   primary: 'var(--color-primary)',
@@ -56,7 +74,8 @@ export default function WorkoutVideoLibrary({ onClose }) {
   const [index, setIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [phase, setPhase] = useState('exercise') // exercise | resting | group-complete
-  const [restLeft, setRestLeft] = useState(REST_SECONDS)
+  const [restDuration, setRestDuration] = useState(() => readStoredRestDuration())
+  const [restLeft, setRestLeft] = useState(restDuration)
   const [completed, setCompleted] = useState(() => new Set())
 
   // Transport-control visibility — the play/pause button fades out ~1s
@@ -64,6 +83,14 @@ export default function WorkoutVideoLibrary({ onClose }) {
   // it back. Paused always stays visible so there's always a way back in.
   const [showControls, setShowControls] = useState(true)
   const hideTimerRef = useRef(null)
+
+  // Buffering state for the current clip, and a live countdown of seconds
+  // remaining in the (looping) clip — driven by the <video> element's own
+  // duration/currentTime so it stays accurate even if the library's saved
+  // videoDurationSec is a little off.
+  const [videoLoading, setVideoLoading] = useState(true)
+  const [videoDuration, setVideoDuration] = useState(null)
+  const [remainingSec, setRemainingSec] = useState(null)
 
   const videoRef = useRef(null)
   const timerRef = useRef(null)
@@ -91,6 +118,14 @@ export default function WorkoutVideoLibrary({ onClose }) {
     clearHideTimer()
   }, [group])
 
+  // A new clip is about to load — show the buffering spinner and reset
+  // the countdown until the new video's metadata comes in.
+  useEffect(() => {
+    setVideoLoading(true)
+    setVideoDuration(current?.videoDurationSec ?? null)
+    setRemainingSec(current?.videoDurationSec ? Math.ceil(current.videoDurationSec) : null)
+  }, [index, group, current?._id])
+
   // Keep the <video> element in sync with exercise changes.
   useEffect(() => {
     const el = videoRef.current
@@ -103,6 +138,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
   // Keep the <video> element in sync with play/pause toggles.
   useEffect(() => {
     const el = videoRef.current
+
     if (!el) return
     if (playing) el.play().catch(() => {})
     else el.pause()
@@ -129,17 +165,13 @@ export default function WorkoutVideoLibrary({ onClose }) {
     hideTimerRef.current = setTimeout(() => setShowControls(false), CONTROLS_HIDE_MS)
   }
 
-  // Tapping anywhere on the player: if controls are hidden, the tap just
-  // reveals them again. If they're already visible, the tap is a genuine
-  // play/pause toggle — matching the "tap once to bring it back, tap
-  // again to act on it" pattern most video apps use.
+  // Tapping anywhere on the player always toggles play/pause AND brings
+  // the button back into view (briefly, if now playing) — so the tap
+  // always visibly does something, even right after the button had
+  // faded out.
   function handlePlayerTap() {
     if (phase !== 'exercise') return
-    if (!showControls) {
-      setShowControls(true)
-      if (playing) armHideTimer()
-      return
-    }
+    setShowControls(true)
     setPlaying((p) => {
       const next = !p
       if (next) armHideTimer()
@@ -151,7 +183,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
   // Rest countdown — ticks every second, auto-advances when it hits zero.
   useEffect(() => {
     if (phase !== 'resting') return
-    setRestLeft(REST_SECONDS)
+    setRestLeft(restDuration)
     timerRef.current = setInterval(() => {
       setRestLeft((t) => {
         if (t <= 1) {
@@ -163,8 +195,27 @@ export default function WorkoutVideoLibrary({ onClose }) {
       })
     }, 1000)
     return clearRestTimer
+    // Only re-run when entering/leaving the resting phase — mid-rest
+    // duration tweaks (adjustRest) update restLeft directly instead of
+    // restarting this effect, so they don't reset the countdown.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
+
+  // +/- 15s / 30s rest adjustment — clamped to 30s–3min, and remembered
+  // as the member's default rest length for next time. Also nudges the
+  // currently-running countdown by the same amount so an adjustment made
+  // mid-rest takes effect immediately rather than waiting for the next
+  // exercise.
+  function adjustRest(deltaSeconds) {
+    setRestDuration((d) => {
+      const next = clampRestDuration(d + deltaSeconds)
+      try { localStorage.setItem(REST_DURATION_STORAGE_KEY, String(next)) } catch { /* ignore */ }
+      return next
+    })
+    if (phase === 'resting') {
+      setRestLeft((t) => Math.max(0, Math.min(REST_MAX_SECONDS, t + deltaSeconds)))
+    }
+  }
 
   function advanceAfterRest() {
     if (isLast) {
@@ -286,7 +337,29 @@ export default function WorkoutVideoLibrary({ onClose }) {
               playsInline
               className="absolute inset-0 object-cover w-full h-full"
               style={{ opacity: phase === 'resting' ? 0.25 : 1, transition: 'opacity 0.3s' }}
+              onLoadedMetadata={(e) => {
+                const d = e.currentTarget.duration
+                if (Number.isFinite(d)) {
+                  setVideoDuration(d)
+                  setRemainingSec(Math.ceil(d))
+                }
+              }}
+              onCanPlay={() => setVideoLoading(false)}
+              onTimeUpdate={(e) => {
+                if (!videoDuration) return
+                setRemainingSec(Math.max(0, Math.ceil(videoDuration - e.currentTarget.currentTime)))
+              }}
+              onWaiting={() => setVideoLoading(true)}
+              onPlaying={() => setVideoLoading(false)}
             />
+
+            {/* Buffering spinner — same style used for the catalog/library
+                loading state above. */}
+            {videoLoading && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <span className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(255,255,255,0.2)', borderTopColor: '#fff' }} />
+              </div>
+            )}
 
             {/* Full-cover tap target — always present so a tap anywhere on
                 the player reveals the transport control; the icon itself
@@ -325,7 +398,12 @@ export default function WorkoutVideoLibrary({ onClose }) {
                 style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)' }}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <h2 className="text-lg font-bold leading-snug" style={{ color: '#fff' }}>{current.name}</h2>
+                  <div className="flex items-baseline flex-wrap gap-x-2 gap-y-1">
+                    <h2 className="text-lg font-bold leading-snug" style={{ color: '#fff' }}>{current.name}</h2>
+                    {remainingSec != null && (
+                      <Pill>{remainingSec}s</Pill>
+                    )}
+                  </div>
                   {completed.has(current._id) && (
                     <span
                       className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full"
@@ -335,9 +413,6 @@ export default function WorkoutVideoLibrary({ onClose }) {
                     </span>
                   )}
                 </div>
-                {current.videoDurationSec && (
-                  <Pill>{Math.round(current.videoDurationSec)}s clip</Pill>
-                )}
                 {current.description && (
                   <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.75)' }}>{current.description}</p>
                 )}
@@ -346,7 +421,15 @@ export default function WorkoutVideoLibrary({ onClose }) {
 
             {/* Resting overlay */}
             {phase === 'resting' && (
-              <RestOverlay restLeft={restLeft} onSkip={skipRest} nextName={!isLast ? videos[index + 1]?.name : null} />
+              <RestOverlay
+                restLeft={restLeft}
+                restDuration={restDuration}
+                onSkip={skipRest}
+                onAdjust={adjustRest}
+                minSeconds={REST_MIN_SECONDS}
+                maxSeconds={REST_MAX_SECONDS}
+                nextName={!isLast ? videos[index + 1]?.name : null}
+              />
             )}
 
             {/* Group complete overlay */}
@@ -407,7 +490,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
               className="flex-1 py-2.5 text-xs font-bold rounded-xl transition-all active:scale-[0.98]"
               style={{ background: S.accent, color: '#0D0D0D', boxShadow: '0 6px 16px rgba(200,241,53,0.25)' }}
             >
-              {completed.has(current._id) ? '✓ Completed — rest again' : `Mark complete · rest ${REST_SECONDS}s`}
+              {completed.has(current._id) ? '✓ Completed — rest again' : `Mark complete · rest ${restDuration}s`}
             </button>
             <button
               onClick={goNext}
@@ -430,8 +513,8 @@ export default function WorkoutVideoLibrary({ onClose }) {
 }
 
 /* ── Rest overlay with circular countdown ─────────────────────────────────── */
-function RestOverlay({ restLeft, onSkip, nextName }) {
-  const progress = restLeft / REST_SECONDS
+function RestOverlay({ restLeft, restDuration, onSkip, onAdjust, minSeconds, maxSeconds, nextName }) {
+  const progress = restDuration > 0 ? restLeft / restDuration : 0
   const offset = RING_CIRCUMFERENCE * (1 - progress)
 
   return (
@@ -451,6 +534,16 @@ function RestOverlay({ restLeft, onSkip, nextName }) {
         <p className="text-sm font-bold" style={{ color: '#fff' }}>Rest up 💧</p>
         {nextName && <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.65)' }}>Next: {nextName}</p>}
       </div>
+
+      {/* Rest-length adjustment — 15s/30s steps, clamped 30s–3min, saved
+          as this member's default for next time. */}
+      <div className="flex items-center gap-1.5">
+        <RestAdjustButton label="−30s" onClick={() => onAdjust(-30)} disabled={restDuration <= minSeconds} />
+        <RestAdjustButton label="−15s" onClick={() => onAdjust(-15)} disabled={restDuration <= minSeconds} />
+        <RestAdjustButton label="+15s" onClick={() => onAdjust(15)} disabled={restDuration >= maxSeconds} />
+        <RestAdjustButton label="+30s" onClick={() => onAdjust(30)} disabled={restDuration >= maxSeconds} />
+      </div>
+
       <button
         onClick={onSkip}
         className="px-5 py-2 text-xs font-semibold rounded-full"
@@ -459,6 +552,19 @@ function RestOverlay({ restLeft, onSkip, nextName }) {
         Skip rest →
       </button>
     </div>
+  )
+}
+
+function RestAdjustButton({ label, onClick, disabled }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="px-2.5 py-1.5 text-[11px] font-bold rounded-full transition-all active:scale-90 disabled:opacity-30"
+      style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.18)' }}
+    >
+      {label}
+    </button>
   )
 }
 

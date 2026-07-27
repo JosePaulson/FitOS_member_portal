@@ -1,17 +1,19 @@
 /**
- * Two-line SVG trend chart for the homepage "Strength progress" card:
- * a lime "Strength" line (weight lifted, per workout) and a purple
- * "Endurance" line (workout duration), sharing the same timeline. Each
- * line is normalized to its own min/max so two very different units
- * (kg vs minutes) can share one chart without one flattening the other.
+ * Two-line SVG trend chart for the Workouts tab "Weight progress" card: a
+ * lime "Weight" line (body weight, kg) and a rust "Calories" line
+ * (calories burned per session), sharing the same timeline. Each line is
+ * normalized to its own min/max so the two very different units can
+ * share one chart without one flattening the other.
  *
  * No per-node value labels — the two lines are identified purely by
- * color + the legend above the chart (matches the Weight/Calories chart
- * on the Workouts tab).
+ * color + the legend above the chart (matches StrengthEnduranceChart on
+ * the Home tab).
  */
-export default function StrengthEnduranceChart({ points, emptyMessage }) {
+const CALORIES_COLOR = '#c2410c'
+
+export default function WeightCaloriesChart({ points, emptyMessage }) {
   const sorted = [...points]
-    .filter((p) => p.strength != null || p.endurance != null)
+    .filter((p) => p.bodyWeight != null || p.caloriesBurned != null)
     .sort((a, b) => new Date(a.date) - new Date(b.date))
 
   if (sorted.length < 2) {
@@ -50,8 +52,8 @@ export default function StrengthEnduranceChart({ points, emptyMessage }) {
     return { coords, path }
   }
 
-  const strengthLine = buildLine('strength')
-  const enduranceLine = buildLine('endurance')
+  const weightLine = buildLine('bodyWeight')
+  const caloriesLine = buildLine('caloriesBurned')
 
   const first = sorted[0]
   const last = sorted[sorted.length - 1]
@@ -60,37 +62,37 @@ export default function StrengthEnduranceChart({ points, emptyMessage }) {
     <div>
       {/* Legend — the only place either line is named; nodes stay unlabeled */}
       <div className="flex items-center gap-4 mb-2">
-        {strengthLine && (
+        {weightLine && (
           <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--color-primary)' }}>
             <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: 'var(--color-accent)' }} />
-            Strength
+            Weight
           </span>
         )}
-        {enduranceLine && (
+        {caloriesLine && (
           <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--color-primary)' }}>
-            <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: '#a855f7' }} />
-            Endurance
+            <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: CALORIES_COLOR }} />
+            Calories
           </span>
         )}
       </div>
 
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ height: 140 }} preserveAspectRatio="none">
-        {strengthLine && (
-          <path d={strengthLine.path} fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {weightLine && (
+          <path d={weightLine.path} fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
         )}
-        {enduranceLine && (
-          <path d={enduranceLine.path} fill="none" stroke="#a855f7" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="4 3" />
+        {caloriesLine && (
+          <path d={caloriesLine.path} fill="none" stroke={CALORIES_COLOR} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="4 3" />
         )}
 
-        {strengthLine?.coords.map((c, i) => (
-          <circle key={`s-${i}`} cx={c.x} cy={c.y} r={i === strengthLine.coords.length - 1 ? 3.5 : 2}
-            fill={i === strengthLine.coords.length - 1 ? 'var(--color-accent)' : 'var(--color-surface)'}
+        {weightLine?.coords.map((c, i) => (
+          <circle key={`w-${i}`} cx={c.x} cy={c.y} r={i === weightLine.coords.length - 1 ? 3.5 : 2}
+            fill={i === weightLine.coords.length - 1 ? 'var(--color-accent)' : 'var(--color-surface)'}
             stroke="var(--color-accent)" strokeWidth="1.5" />
         ))}
-        {enduranceLine?.coords.map((c, i) => (
-          <circle key={`e-${i}`} cx={c.x} cy={c.y} r={i === enduranceLine.coords.length - 1 ? 3.5 : 2}
-            fill={i === enduranceLine.coords.length - 1 ? '#a855f7' : 'var(--color-surface)'}
-            stroke="#a855f7" strokeWidth="1.5" />
+        {caloriesLine?.coords.map((c, i) => (
+          <circle key={`c-${i}`} cx={c.x} cy={c.y} r={i === caloriesLine.coords.length - 1 ? 3.5 : 2}
+            fill={i === caloriesLine.coords.length - 1 ? CALORIES_COLOR : 'var(--color-surface)'}
+            stroke={CALORIES_COLOR} strokeWidth="1.5" />
         ))}
       </svg>
 

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useMemberAuth } from '../context/MemberAuthContext'
 import { ThemeToggle } from '../components/ui/Spinner'
 import { useThemeContext } from '../context/ThemeContext'
@@ -146,6 +146,13 @@ export default function Login() {
           </form>
         </div>
       </div>
+
+      <p className="relative max-w-sm mt-6 text-xs text-center" style={{ color: 'var(--color-secondary)' }}>
+        By continuing, you agree to our{' '}
+        <Link to="/legal/terms" className="underline" style={{ color: 'var(--color-secondary)' }}>Terms</Link>
+        {' '}&{' '}
+        <Link to="/legal/privacy-policy" className="underline" style={{ color: 'var(--color-secondary)' }}>Privacy Policy</Link>.
+      </p>
 
       <InstallPrompt withTabBar={false} />
     </div>

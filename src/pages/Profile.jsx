@@ -197,9 +197,11 @@ export default function Profile() {
   const daysInMonth = new Date(calYear, calMonth, 0).getDate()
   const today = localDateKey(new Date())
 
-  // A day with BOTH a plain check-in and a PT session should count as ONE
-  // check-in, not two — union the two date-key sets rather than summing.
-  const totalCheckinDates = new Set([...attendedDates, ...ptSessionsByDate.keys()])
+  // A day with a plain check-in, a PT session, and/or a self-logged
+  // workout should count as ONE check-in, not several — union all three
+  // date-key sets rather than summing. A workout log counts toward
+  // attendance exactly like a PT session does.
+  const totalCheckinDates = new Set([...attendedDates, ...ptSessionsByDate.keys(), ...workoutLogsByDate.keys()])
   const totalCheckins = totalCheckinDates.size
 
   // "Total PT" only counts sessions that actually happened — scheduled
@@ -266,7 +268,7 @@ export default function Profile() {
           <span className="text-2xl">🏢</span>
           <div>
             <p className="text-sm font-semibold" style={{ color: S.primary }}>{gym.name}</p>
-            <p className="text-xs" style={{ color: S.secondary }}>{gym.subdomain}.fitos.in</p>
+            <p className="text-xs" style={{ color: S.secondary }}>{gym.subdomain}.f8os.in</p>
           </div>
         </div>
       )}
@@ -630,6 +632,20 @@ export default function Profile() {
           </div>
         ))}
       </div>
+
+      {/* ── Legal & policies ── */}
+      <button
+        onClick={() => navigate('/legal')}
+        className="flex items-center justify-between p-5 text-left card"
+      >
+        <div>
+          <p className="text-sm font-semibold" style={{ color: S.primary }}>📄 Legal & policies</p>
+          <p className="text-xs mt-0.5" style={{ color: S.secondary }}>
+            Terms, privacy, refund, and cookie policies
+          </p>
+        </div>
+        <span style={{ color: S.secondary }}>→</span>
+      </button>
 
       {/* ── Logout ── */}
       <button onClick={handleLogout} disabled={logoutBusy}

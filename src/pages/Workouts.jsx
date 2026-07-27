@@ -5,7 +5,7 @@ import FoodScannerModal from '../components/FoodScanner'
 import { useLocation } from 'react-router-dom'
 import RecentScans from '../components/RecentScans'
 import { WorkoutLogFormModal, WorkoutLogDetail } from '../components/WorkoutLogForm'
-import BodyWeightChart from '../components/BodyWeightChart'
+import WeightCaloriesChart from '../components/WeightCaloriesChart'
 import { readCache, writeCache } from '../lib/offline'
 import { istDateKey, istDateTime, fmtISTDate } from '../lib/dateIST'
 import { computePR, formatPR, buildExerciseMaxMap, sessionHasPR, sortByMuscleGroup } from '../lib/exercisePR'
@@ -247,15 +247,18 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
         </div>
       )}
 
-      {/* ── Body weight progress ── */}
+      {/* ── Weight progress ── */}
       {!logsLoading && weightPoints.length > 0 && (
         <div className="p-4 card">
-          <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>⚖️ Body weight progress</h3>
+          <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>⚖️ Weight progress</h3>
           {filteredWeightPoints.length > 0 ? (
-            <BodyWeightChart points={filteredWeightPoints} />
+            <WeightCaloriesChart
+              points={filteredWeightPoints}
+              emptyMessage="Log a couple more workouts with weight or calories to see your trend here."
+            />
           ) : (
             <p className="py-6 text-xs text-center" style={{ color: 'var(--color-secondary)' }}>
-              No body weight entries in this range.
+              No entries in this range.
             </p>
           )}
         </div>
