@@ -268,7 +268,7 @@ export default function Profile() {
           <span className="text-2xl">🏢</span>
           <div>
             <p className="text-sm font-semibold" style={{ color: S.primary }}>{gym.name}</p>
-            <p className="text-xs" style={{ color: S.secondary }}>{gym.subdomain}.f8os.in</p>
+            <p className="text-xs" style={{ color: S.secondary }}>x.f8os.in</p>
           </div>
         </div>
       )}

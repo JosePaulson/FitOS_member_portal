@@ -397,11 +397,11 @@ export default function WorkoutVideoLibrary({ onClose }) {
                 className="absolute bottom-0 inset-x-0 z-10 flex flex-col gap-2 px-5 pt-10 pb-4 pointer-events-none"
                 style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)' }}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-baseline flex-wrap gap-x-2 gap-y-1">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
                     <h2 className="text-lg font-bold leading-snug" style={{ color: '#fff' }}>{current.name}</h2>
-                    {remainingSec != null && (
-                      <Pill>{remainingSec}s</Pill>
+                    {remainingSec != null && videoDuration != null && (
+                      <DurationRing remaining={remainingSec} total={videoDuration} />
                     )}
                   </div>
                   {completed.has(current._id) && (
@@ -605,13 +605,30 @@ function GroupCompleteOverlay({ groupLabel, count, onReplay, onClose, groups, cu
   )
 }
 
-function Pill({ children }) {
+// Small badge next to the exercise name: a semi-transparent circle with a
+// thin purple ring that depletes from full to empty in step with the
+// live countdown (remaining/total), plus the seconds-left number inside.
+const DURATION_RING_RADIUS = 15
+const DURATION_RING_CIRCUMFERENCE = 2 * Math.PI * DURATION_RING_RADIUS
+const DURATION_RING_TRACK_COLOR = 'rgba(168,85,247,0.25)'
+const DURATION_RING_COLOR = 'rgba(168,85,247,0.85)'
+
+function DurationRing({ remaining, total }) {
+  const progress = total > 0 ? Math.max(0, Math.min(1, remaining / total)) : 0
+  const offset = DURATION_RING_CIRCUMFERENCE * (1 - progress)
+
   return (
-    <span
-      className="px-2.5 py-1 rounded-full text-xs font-semibold"
-      style={{ background: S.surface3, color: S.secondary, border: `1px solid ${S.border}` }}
-    >
-      {children}
+    <span className="relative flex items-center justify-center shrink-0" style={{ width: 34, height: 34 }}>
+      <svg viewBox="0 0 36 36" width="34" height="34" className="absolute inset-0 -rotate-90">
+        <circle cx="18" cy="18" r="17" fill="rgba(0,0,0,0.3)" />
+        <circle cx="18" cy="18" r={DURATION_RING_RADIUS} fill="none" stroke={DURATION_RING_TRACK_COLOR} strokeWidth="1.5" />
+        <circle
+          cx="18" cy="18" r={DURATION_RING_RADIUS} fill="none" stroke={DURATION_RING_COLOR} strokeWidth="1.5" strokeLinecap="round"
+          strokeDasharray={DURATION_RING_CIRCUMFERENCE} strokeDashoffset={offset}
+          style={{ transition: 'stroke-dashoffset 1s linear' }}
+        />
+      </svg>
+      <span className="text-[10px] font-bold" style={{ color: '#fff' }}>{remaining}</span>
     </span>
   )
 }

@@ -85,6 +85,10 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
   const [open, setOpen] = useState(null)
 
   const [logs, setLogs] = useState([])
+  // Fetched purely so personal records shown on this tab account for PT
+  // sessions too — a PR is a PR regardless of which tab a lift happened
+  // on. Not used for anything else here.
+  const [prHistorySessions, setPrHistorySessions] = useState([])
   const [weightPoints, setWeightPoints] = useState([])
   const [logsLoading, setLogsLoading] = useState(true)
   const [showLogForm, setShowLogForm] = useState(false)
@@ -93,15 +97,21 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
   // Log/body-weight filter: 'week' | 'month' | 'all' | 'pr' | null (none selected)
   const [logFilter, setLogFilter] = useState(null)
 
+  // Combined history (this tab's workout logs + PT sessions) so PR
+  // lookups match what's shown on the PT tab for the same exercise.
+  const prHistory = useMemo(() => [...logs, ...prHistorySessions], [logs, prHistorySessions])
+
   function loadLogs() {
     setLogsLoading(true)
     Promise.all([
       portalApi.workoutLogs({ limit: 20 }),
       portalApi.bodyWeightProgress(),
+      portalApi.ptSessions({ limit: 100 }),
     ])
-      .then(([logsRes, progRes]) => {
+      .then(([logsRes, progRes, ptRes]) => {
         setLogs(logsRes.data.logs || [])
         setWeightPoints(progRes.data.points || [])
+        setPrHistorySessions((ptRes.data.sessions || []).filter((s) => s.status === 'completed'))
       })
       .catch(() => { })
       .finally(() => setLogsLoading(false))
@@ -192,7 +202,7 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
     <>
       <WorkoutLogDetail
         log={openLog}
-        history={logs}
+        history={prHistory}
         onBack={closeOpenLog}
         onEdit={() => { setEditingLog(openLog); setShowLogForm(true) }}
         onDelete={() => deleteLog(openLog._id)}
@@ -202,7 +212,7 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
       {showLogForm && (
         <WorkoutLogFormModal
           initial={editingLog}
-          history={logs}
+          history={prHistory}
           onClose={() => { setShowLogForm(false); setEditingLog(null) }}
           onSaved={(saved) => { setShowLogForm(false); setEditingLog(null); setOpenLog(saved); loadLogs() }}
         />
@@ -221,7 +231,7 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
       {showLogForm && (
         <WorkoutLogFormModal
           initial={editingLog}
-          history={logs}
+          history={prHistory}
           onClose={() => { setShowLogForm(false); setEditingLog(null) }}
           onSaved={() => { setShowLogForm(false); setEditingLog(null); setOpenLog(null); loadLogs() }}
         />
@@ -604,6 +614,10 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
   const { muscleGroups } = useExerciseCatalog()
   const cached = readCache('pt:sessions')
   const [sessions, setSessions] = useState(cached?.sessions ?? [])
+  // Fetched purely so personal records shown on this tab account for
+  // self-logged workouts too — a PR is a PR regardless of which tab a
+  // lift happened on. Not used for anything else here.
+  const [prHistoryLogs, setPrHistoryLogs] = useState(cached?.prHistoryLogs ?? [])
   const [progress, setProgress] = useState(cached?.progress ?? [])
   const [stats, setStats] = useState(cached?.stats ?? {})
   const [ptPlans, setPtPlans] = useState(cached?.ptPlans ?? [])
@@ -617,13 +631,19 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState('')
 
+  // Combined history (this tab's PT sessions + self-logged workouts) so
+  // PR lookups match what's shown on the Workout tab for the same
+  // exercise.
+  const prHistory = useMemo(() => [...sessions, ...prHistoryLogs], [sessions, prHistoryLogs])
+
   async function load() {
     try {
-      const [sessRes, progRes, plansRes, catalogRes] = await Promise.all([
+      const [sessRes, progRes, plansRes, catalogRes, logsRes] = await Promise.all([
         portalApi.ptSessions({ limit: 50 }),
         portalApi.ptProgress(),
         portalApi.ptPlans(),
         portalApi.ptPlanCatalog(),
+        portalApi.workoutLogs({ limit: 100 }),
       ])
       const nextSessions = sessRes.data.sessions || []
       const nextStats = {
@@ -633,12 +653,14 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
       const nextProgress = progRes.data || []
       const nextPlans = plansRes.data.plans || []
       const nextCatalog = { gymName: catalogRes.data.gymName, startingAtPerSession: catalogRes.data.startingAtPerSession, plans: catalogRes.data.plans || [] }
+      const nextPrHistoryLogs = logsRes.data.logs || []
       setSessions(nextSessions)
       setStats(nextStats)
       setProgress(nextProgress)
       setPtPlans(nextPlans)
       setCatalog(nextCatalog)
-      writeCache('pt:sessions', { sessions: nextSessions, stats: nextStats, progress: nextProgress, ptPlans: nextPlans, catalog: nextCatalog })
+      setPrHistoryLogs(nextPrHistoryLogs)
+      writeCache('pt:sessions', { sessions: nextSessions, stats: nextStats, progress: nextProgress, ptPlans: nextPlans, catalog: nextCatalog, prHistoryLogs: nextPrHistoryLogs })
     } catch { /* offline / server error — keep showing cached data above */ }
     finally { setLoading(false) }
   }
@@ -822,7 +844,7 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
             </div>
             <div className="flex flex-col">
               {sortByMuscleGroup(selected.exercises, muscleGroups).map((ex, i) => {
-                const pr = computePR(sessions, ex.name)
+                const pr = computePR(prHistory, ex.name)
                 const weightIsPR = pr != null && ex.weight != null && Number(ex.weight) === pr.weight
                 return (
                   <div key={i} className="flex items-center justify-between py-2.5"
