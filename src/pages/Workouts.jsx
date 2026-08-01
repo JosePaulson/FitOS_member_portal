@@ -9,6 +9,8 @@ import WeightCaloriesChart from '../components/WeightCaloriesChart'
 import { readCache, writeCache } from '../lib/offline'
 import { istDateKey, istDateTime, fmtISTDate } from '../lib/dateIST'
 import { computePR, formatPR, buildExerciseMaxMap, sessionHasPR, sortByMuscleGroup } from '../lib/exercisePR'
+import { shareContent, buildPTSessionShareData, shareDataToText, generateShareImage } from '../lib/share'
+import ShareIcon from '../components/ShareIcon'
 import { useExerciseCatalog } from '../hooks/useExerciseCatalog'
 import { useBackableState } from '../hooks/useBackableState'
 import WorkoutVideoLibrary from '../components/WorkoutVideoLibrary'
@@ -293,7 +295,7 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
                         {isPR && (
                           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0"
                             style={{ background: 'rgba(251,191,36,0.12)', color: '#fbbf24' }}>
-                            🏆 PR
+                            PR
                           </span>
                         )}
                       </p>
@@ -470,6 +472,7 @@ function DietTab({ autoOpenScanner, onConsumedAutoOpen }) {
                   {plan.targetProtein && <span>🥩 {plan.targetProtein}g protein</span>}
                   {plan.targetCarbs && <span>🍚 {plan.targetCarbs}g carbs</span>}
                   {plan.targetFat && <span>🥑 {plan.targetFat}g fat</span>}
+                  {plan.fileUrl && <span>📎 Downloadable file</span>}
                 </div>
               </button>
             ))}
@@ -489,6 +492,29 @@ function DietDetail({ plan, onBack }) {
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-primary)' }}>{plan.name}</h2>
         {plan.description && <p className="mt-1 text-sm" style={{ color: 'var(--color-secondary)' }}>{plan.description}</p>}
       </div>
+      {plan.fileUrl && (
+        <a
+          href={plan.fileUrl}
+          target="_blank"
+          rel="noreferrer"
+          download={plan.fileName || undefined}
+          className="flex items-center gap-3 p-4 transition-all card active:scale-[0.99]"
+        >
+          <span className="flex items-center justify-center text-xl rounded-xl w-11 h-11 shrink-0"
+            style={{ background: 'rgba(200,241,53,0.12)' }}>
+            {fileTypeIcon(plan.fileType)}
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold truncate" style={{ color: 'var(--color-primary)' }}>
+              {plan.fileName || 'Diet plan file'}
+            </p>
+            <p className="text-xs" style={{ color: 'var(--color-secondary)' }}>
+              {formatFileSize(plan.fileSizeBytes)} · Tap to download
+            </p>
+          </div>
+          <span className="text-lg shrink-0" style={{ color: 'var(--color-accent)' }}>⬇</span>
+        </a>
+      )}
       {(plan.targetCalories || plan.targetProtein) && (
         <div className="p-5 card">
           <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>Daily targets</h3>
@@ -538,6 +564,21 @@ function DietDetail({ plan, onBack }) {
       )}
     </div>
   )
+}
+
+function fileTypeIcon(mimeType) {
+  if (!mimeType) return '📎'
+  if (mimeType.startsWith('image/')) return '🖼️'
+  if (mimeType === 'application/pdf') return '📕'
+  if (mimeType.includes('word')) return '📘'
+  if (mimeType.includes('sheet') || mimeType.includes('excel')) return '📗'
+  return '📎'
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return ''
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 const PT_STATUS_COLOR = {
@@ -623,6 +664,8 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
   const [ptPlans, setPtPlans] = useState(cached?.ptPlans ?? [])
   const [catalog, setCatalog] = useState(cached?.catalog ?? null)
   const [loading, setLoading] = useState(cached === null)
+  const [shareStatus, setShareStatus] = useState('')
+  const [sharing, setSharing] = useState(false)
   const [selected, setSelected] = useState(null)
   const [showPR, setShowPR] = useState(false)
   const [ackLoading, setAckLoading] = useState(null)
@@ -732,13 +775,49 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
     const needsAck = !selected.acknowledgedByMember &&
       !['cancelled', 'pending', 'declined'].includes(selected.status) && isPast
 
+    async function handleShareSession() {
+      setSharing(true)
+      try {
+        const data = buildPTSessionShareData(selected)
+        const imageBlob = await generateShareImage(data)
+        const result = await shareContent({ title: selected.title || 'PT Session', text: shareDataToText(data), imageBlob })
+        if (result === 'copied') {
+          setShareStatus('Copied to clipboard!')
+          setTimeout(() => setShareStatus(''), 2000)
+        } else if (result === 'downloaded') {
+          setShareStatus('Image saved!')
+          setTimeout(() => setShareStatus(''), 2000)
+        } else if (result === 'failed') {
+          setShareStatus('Could not share — try again')
+          setTimeout(() => setShareStatus(''), 2000)
+        }
+      } finally {
+        setSharing(false)
+      }
+    }
+
     return (
       <div className="flex flex-col gap-4 animate-fade-up">
-        <button onClick={() => { closeSelected(); setAckError('') }}
-          className="flex items-center self-start gap-2 text-sm transition-colors"
-          style={{ color: 'var(--color-secondary)' }}>
-          ← Back to sessions
-        </button>
+        <div className="flex items-center justify-between">
+          <button onClick={() => { closeSelected(); setAckError('') }}
+            className="flex items-center self-start gap-2 text-sm transition-colors"
+            style={{ color: 'var(--color-secondary)' }}>
+            ← Back to sessions
+          </button>
+          {selected.status === 'completed' && (
+            <button
+              onClick={handleShareSession}
+              disabled={sharing}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full transition-all disabled:opacity-60"
+              style={{ background: 'var(--color-surface-3)', color: 'var(--color-primary)', border: '1px solid var(--color-border)' }}
+            >
+              <ShareIcon size={14} /> {sharing ? 'Preparing…' : 'Share'}
+            </button>
+          )}
+        </div>
+        {shareStatus && (
+          <p className="text-xs text-center -mt-2" style={{ color: 'var(--color-accent)' }}>{shareStatus}</p>
+        )}
 
         {/* Header */}
         <div className="flex items-start justify-between gap-3">

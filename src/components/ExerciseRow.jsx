@@ -98,7 +98,7 @@ export default function ExerciseRow({ exercise, onChange, onRemove, history, sho
                 style={{ background: 'rgba(251,191,36,0.12)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.25)' }}
                 title="Your personal record for this exercise"
               >
-                🏆 {formatPR(pr)}
+                {formatPR(pr)}
               </span>
             )}
           </div>
@@ -123,7 +123,7 @@ export default function ExerciseRow({ exercise, onChange, onRemove, history, sho
                     style={{ color: 'var(--color-primary)' }}
                   >
                     <span>{name}</span>
-                    {sPr && <span className="text-[10px] shrink-0" style={{ color: '#fbbf24' }}>🏆 {formatPR(sPr)}</span>}
+                    {sPr && <span className="text-[10px] shrink-0" style={{ color: '#fbbf24' }}>{formatPR(sPr)}</span>}
                   </button>
                 )
               })}

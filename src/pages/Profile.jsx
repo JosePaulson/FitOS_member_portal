@@ -10,6 +10,7 @@ import { useNotifications } from '../context/NotificationContext'
 import { useAnchorScroll } from '../hooks/useAnchorScroll'
 import { readCache, writeCache } from '../lib/offline'
 import { istDayName } from '../lib/dateIST'
+import { fingerprintLoginAvailable, registerFingerprint } from '../lib/webauthn'
 
 // Calendar-day key from a Date's LOCAL date parts — NOT toISOString(), which
 // gives the UTC date and silently shifts anything before ~5:30am IST onto
@@ -51,6 +52,13 @@ export default function Profile() {
 
   const [showPin, setShowPin] = useState(false)
   const [pinForm, setPinForm] = useState({ currentPin: '', newPin: '', confirmPin: '' })
+  const [showFingerprint, setShowFingerprint] = useState(false)
+  const [fingerprintSupported, setFingerprintSupported] = useState(false)
+  const [fpDevices, setFpDevices] = useState([])
+  const [fpLoading, setFpLoading] = useState(false)
+  const [fpBusy, setFpBusy] = useState(false)
+  const [fpError, setFpError] = useState('')
+  const [fpSuccess, setFpSuccess] = useState('')
   const [pinError, setPinError] = useState('')
   const [pinSuccess, setPinSuccess] = useState('')
   const [pinLoading, setPinLoading] = useState(false)
@@ -182,6 +190,44 @@ export default function Profile() {
     } catch (err) {
       setPinError(err.response?.data?.message || 'Failed to change PIN')
     } finally { setPinLoading(false) }
+  }
+
+  useEffect(() => {
+    fingerprintLoginAvailable().then(setFingerprintSupported)
+  }, [])
+
+  function loadFingerprintDevices() {
+    setFpLoading(true)
+    authApi.webauthnList()
+      .then(({ data }) => setFpDevices(data))
+      .catch(() => {})
+      .finally(() => setFpLoading(false))
+  }
+
+  async function handleEnableFingerprint() {
+    setFpError(''); setFpSuccess(''); setFpBusy(true)
+    try {
+      const deviceName = /iPhone|iPad/.test(navigator.userAgent) ? 'iPhone/iPad'
+        : /Android/.test(navigator.userAgent) ? 'Android device'
+        : 'This device'
+      await registerFingerprint(deviceName)
+      setFpSuccess('Fingerprint login enabled for this device!')
+      loadFingerprintDevices()
+    } catch (err) {
+      if (err?.name !== 'NotAllowedError') {
+        setFpError(err.response?.data?.message || 'Could not set up fingerprint login')
+      }
+    } finally { setFpBusy(false) }
+  }
+
+  async function handleRemoveFingerprint(credentialId) {
+    setFpError('')
+    try {
+      await authApi.webauthnRemove(credentialId)
+      setFpDevices((prev) => prev.filter((d) => d.credentialId !== credentialId))
+    } catch {
+      setFpError('Failed to remove device')
+    }
   }
 
   async function handleLogout() {
@@ -617,6 +663,74 @@ export default function Profile() {
           </form>
         )}
       </div>
+
+      {/* ── Fingerprint login ── */}
+      {fingerprintSupported && (
+        <div className="p-5 card">
+          <button
+            onClick={() => {
+              const next = !showFingerprint
+              setShowFingerprint(next)
+              setFpError(''); setFpSuccess('')
+              if (next) loadFingerprintDevices()
+            }}
+            className="flex items-center justify-between w-full text-sm font-semibold"
+            style={{ color: S.primary }}>
+            <span>🫆 Fingerprint login</span>
+            <span className="text-lg" style={{ color: S.secondary }}>{showFingerprint ? '−' : '+'}</span>
+          </button>
+
+          {showFingerprint && (
+            <div className="flex flex-col gap-3 pt-4 mt-4" style={{ borderTop: `1px solid ${S.border}` }}>
+              <p className="text-xs" style={{ color: S.secondary }}>
+                Skip typing your PIN on this device — sign in with your fingerprint or face instead.
+              </p>
+
+              {fpError && (
+                <p className="px-3 py-2 text-xs rounded-lg"
+                  style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.2)', color: '#f87171' }}>
+                  {fpError}
+                </p>
+              )}
+              {fpSuccess && (
+                <p className="px-3 py-2 text-xs rounded-lg"
+                  style={{ background: 'rgba(200,241,53,0.1)', border: '1px solid rgba(200,241,53,0.2)', color: S.accent }}>
+                  {fpSuccess}
+                </p>
+              )}
+
+              {fpLoading ? (
+                <div className="h-10 rounded-lg animate-pulse" style={{ background: S.surface2 || 'var(--color-surface-2)' }} />
+              ) : fpDevices.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  {fpDevices.map((d) => (
+                    <div key={d.credentialId} className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)' }}>
+                      <div>
+                        <p className="text-sm font-medium" style={{ color: S.primary }}>{d.deviceName}</p>
+                        <p className="text-[11px]" style={{ color: S.secondary }}>
+                          Added {new Date(d.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </p>
+                      </div>
+                      <button onClick={() => handleRemoveFingerprint(d.credentialId)} className="text-xs" style={{ color: '#f87171' }}>
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              <button
+                onClick={handleEnableFingerprint}
+                disabled={fpBusy}
+                className="w-full font-bold py-2.5 rounded-lg text-sm transition-all disabled:opacity-60"
+                style={{ background: S.accent, color: '#0D0D0D' }}
+              >
+                {fpBusy ? 'Setting up…' : '+ Enable on this device'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── App info ── */}
       <div className="flex flex-col gap-2 p-5 card">

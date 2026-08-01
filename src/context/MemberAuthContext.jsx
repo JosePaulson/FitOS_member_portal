@@ -63,8 +63,7 @@ export function MemberAuthProvider({ children }) {
     return () => window.removeEventListener('online', onOnline)
   }, [verifySession])
 
-  const login = useCallback(async (subdomain, phone, pin) => {
-    const { data } = await authApi.login({ subdomain, phone, pin })
+  const applyLoginData = useCallback((data) => {
     localStorage.setItem('m_accessToken', data.accessToken)
     localStorage.setItem('m_refreshToken', data.refreshToken)
     setMember(data.member)
@@ -72,8 +71,23 @@ export function MemberAuthProvider({ children }) {
     writeCache('auth:member', data.member)
     writeCache('auth:gym', data.gym)
     setIsOffline(false)
+    // Remembered so next time Login.jsx can skip straight to phone/PIN
+    // (or fingerprint) instead of asking for the gym ID again.
+    if (data.gym?.subdomain) {
+      try { localStorage.setItem('fitos_last_gym_subdomain', data.gym.subdomain) } catch { /* ignore */ }
+    }
     return data
   }, [])
+
+  const login = useCallback(async (subdomain, phone, pin) => {
+    const { data } = await authApi.login({ subdomain, phone, pin })
+    return applyLoginData(data)
+  }, [applyLoginData])
+
+  // Used after a successful WebAuthn (fingerprint) login ceremony, which
+  // already returns the same {accessToken, refreshToken, member, gym}
+  // shape as PIN login — just skips straight to applying it.
+  const loginWithData = useCallback((data) => applyLoginData(data), [applyLoginData])
 
   const logout = useCallback(async () => {
     try { await authApi.logout() } catch { /* ignore — still log out locally */ }
@@ -94,7 +108,7 @@ export function MemberAuthProvider({ children }) {
   }, [])
 
   return (
-    <Ctx.Provider value={{ member, gym, loading, isOffline, login, logout, refreshMember }}>
+    <Ctx.Provider value={{ member, gym, loading, isOffline, login, loginWithData, logout, refreshMember }}>
       {children}
     </Ctx.Provider>
   )

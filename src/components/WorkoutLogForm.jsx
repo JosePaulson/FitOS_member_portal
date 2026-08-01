@@ -4,7 +4,10 @@ import Spinner from './ui/Spinner'
 import ExerciseRow from './ExerciseRow'
 import CopyExercisesModal from './CopyExercisesModal'
 import { computePR, formatPR, sortByMuscleGroup } from '../lib/exercisePR'
+import { shareContent, buildWorkoutLogShareData, shareDataToText, generateShareImage } from '../lib/share'
+import ShareIcon from './ShareIcon'
 import { useExerciseCatalog } from '../hooks/useExerciseCatalog'
+import { useDragReorder } from '../hooks/useDragReorder'
 import { toISTInputValue, parseISTInputValue, fmtISTDateTime } from '../lib/dateIST'
 
 /** Create/edit form for a self-logged workout — exercises, body weight, duration, time. */
@@ -70,6 +73,11 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
     setForm((v) => ({ ...v, exercises: v.exercises.filter((_, idx) => idx !== i) }))
   }
 
+  const { list: orderedExercises, dragIndex, getHandleProps, setRowRef } = useDragReorder(
+    form.exercises,
+    (reordered) => setForm((v) => ({ ...v, exercises: reordered }))
+  )
+
   const [showCopyModal, setShowCopyModal] = useState(false)
   function copyExercises(copied) {
     setForm((v) => ({ ...v, exercises: [...v.exercises.filter((e) => e.name.trim()), ...copied] }))
@@ -106,98 +114,116 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-end justify-center px-0 sm:items-center sm:px-4"
-        style={{ background: 'rgba(0,0,0,0.6)' }}>
-        <div ref={modalScrollRef} className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-5 max-h-[92vh] overflow-y-auto relative animate-fade-up"
-          style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
-          <button onClick={onClose} className="absolute text-2xl leading-none top-4 right-5" style={{ color: 'var(--color-secondary)' }}>×</button>
-          <h2 className="mb-4 text-lg font-bold" style={{ color: 'var(--color-primary)' }}>
-            {initial ? 'Edit workout' : '➕ Log a workout'}
-          </h2>
+    <div className="fixed inset-0 z-50 flex items-end justify-center px-0 sm:items-center sm:px-4"
+      style={{ background: 'rgba(0,0,0,0.6)' }}>
+      <div ref={modalScrollRef} className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-5 max-h-[92vh] overflow-y-auto relative animate-fade-up"
+        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+        <button onClick={onClose} className="absolute text-2xl leading-none top-4 right-5" style={{ color: 'var(--color-secondary)' }}>×</button>
+        <h2 className="mb-4 text-lg font-bold" style={{ color: 'var(--color-primary)' }}>
+          {initial ? 'Edit workout' : '➕ Log a workout'}
+        </h2>
 
-          {error && (
-            <p className="px-3 py-2 mb-3 text-xs rounded-lg" style={{ background: 'rgba(248,113,113,0.1)', color: '#f87171' }}>{error}</p>
-          )}
+        {error && (
+          <p className="px-3 py-2 mb-3 text-xs rounded-lg" style={{ background: 'rgba(248,113,113,0.1)', color: '#f87171' }}>{error}</p>
+        )}
 
-          <div className="flex flex-col gap-3">
-            <LabeledInput label="Title">
-              <input type="text" value={form.title} onChange={set('title')} className="field-input" placeholder="Leg day, morning run…" />
+        <div className="flex flex-col gap-3">
+          <LabeledInput label="Title">
+            <input type="text" value={form.title} onChange={set('title')} className="field-input" placeholder="Leg day, morning run…" />
+          </LabeledInput>
+
+          <div className="grid grid-cols-2 gap-3">
+            <LabeledInput label="Date & time">
+              <input type="datetime-local" value={form.when} onChange={set('when')} className="field-input" />
             </LabeledInput>
+            <LabeledInput label="Duration (min)">
+              <input type="number" min="5" step="5" value={form.durationMinutes} onChange={set('durationMinutes')} className="field-input" />
+            </LabeledInput>
+          </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <LabeledInput label="Date & time">
-                <input type="datetime-local" value={form.when} onChange={set('when')} className="field-input" />
-              </LabeledInput>
-              <LabeledInput label="Duration (min)">
-                <input type="number" min="5" step="5" value={form.durationMinutes} onChange={set('durationMinutes')} className="field-input" />
-              </LabeledInput>
+          <LabeledInput label="Body weight (kg) — optional">
+            <input type="number" step="0.1" value={form.bodyWeight} onChange={set('bodyWeight')} className="field-input" placeholder="72.5" />
+          </LabeledInput>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium" style={{ color: 'var(--color-secondary)' }}>Exercises</label>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => setShowCopyModal(true)} className="text-xs font-semibold" style={{ color: 'var(--color-secondary)' }}>
+                  📋 Copy from previous
+                </button>
+                <button type="button" ref={topAddBtnRef} onClick={addExercise} className="text-xs font-semibold" style={{ color: 'var(--color-accent)' }}>+ Add exercise</button>
+              </div>
             </div>
-
-            <LabeledInput label="Body weight (kg) — optional">
-              <input type="number" step="0.1" value={form.bodyWeight} onChange={set('bodyWeight')} className="field-input" placeholder="72.5" />
-            </LabeledInput>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-medium" style={{ color: 'var(--color-secondary)' }}>Exercises</label>
-                <div className="flex items-center gap-3">
-                  <button type="button" onClick={() => setShowCopyModal(true)} className="text-xs font-semibold" style={{ color: 'var(--color-secondary)' }}>
-                    📋 Copy from previous
-                  </button>
-                  <button type="button" ref={topAddBtnRef} onClick={addExercise} className="text-xs font-semibold" style={{ color: 'var(--color-accent)' }}>+ Add exercise</button>
-                </div>
-              </div>
-              <div className="flex flex-col gap-2">
-                {form.exercises.map((ex, i) => (
-                  <div key={i} ref={(el) => (exerciseRefs.current[i] = el)}>
-                    <ExerciseRow
-                      exercise={ex}
-                      history={history}
-                      showRemove={form.exercises.length > 1}
-                      onChange={(field, val) => updateExercise(i, field, val)}
-                      onRemove={() => removeExercise(i)}
-                    />
+            <div className="flex flex-col gap-2">
+              {orderedExercises.map((ex, i) => {
+                const handleProps = getHandleProps(i)
+                return (
+                  <div
+                    key={i}
+                    ref={(el) => { exerciseRefs.current[i] = el; setRowRef(i)(el) }}
+                    className="flex items-stretch gap-1.5"
+                    style={{ opacity: dragIndex === i ? 0.5 : 1 }}
+                  >
+                    <span
+                      {...handleProps}
+                      aria-label="Drag to reorder"
+                      className="flex items-center justify-center px-1 shrink-0 select-none"
+                      style={{ ...handleProps.style, color: 'var(--color-secondary)' }}
+                    >
+                      ⠿
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <ExerciseRow
+                        exercise={ex}
+                        history={history}
+                        showRemove={form.exercises.length > 1}
+                        onChange={(field, val) => updateExercise(i, field, val)}
+                        onRemove={() => removeExercise(i)}
+                      />
+                    </div>
                   </div>
-                ))}
-              </div>
-              {/* Second "Add exercise" affordance right after the list, so it's
+                )
+              })}
+            </div>
+            {/* Second "Add exercise" affordance right after the list, so it's
                 always within reach without scrolling back up — only shown
                 once the original button up top has scrolled out of view. */}
-              {!topAddBtnVisible && (
-                <button type="button" onClick={addExercise}
-                  className="w-full mt-2 py-2.5 text-xs font-semibold rounded-lg transition-colors"
-                  style={{ color: 'var(--color-accent)', border: '1px dashed var(--color-accent)', background: 'rgba(200,241,53,0.05)' }}>
-                  + Add exercise
-                </button>
-              )}
-            </div>
-
-            <LabeledInput label="Notes — optional">
-              <textarea rows={2} value={form.notes} onChange={set('notes')} className="resize-none field-input" placeholder="How it felt, anything to remember…" />
-            </LabeledInput>
-
-            <p className="text-[11px]" style={{ color: 'var(--color-secondary)' }}>
-              🔥 Calories burned is estimated automatically from your body weight, duration, and the exercises above — same method used for PT sessions.
-            </p>
-
-            <div className="flex gap-3 pt-1">
-              <button onClick={onClose} className="flex-1 py-3 text-sm font-semibold transition-all rounded-xl"
-                style={{ background: 'var(--color-surface-3)', color: 'var(--color-primary)' }}>Cancel</button>
-              <button onClick={save} disabled={saving} className="flex-[2] py-3 text-sm font-bold transition-all rounded-xl disabled:opacity-60"
-                style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
-                {saving ? 'Saving…' : initial ? 'Update workout' : 'Save workout'}
+            {!topAddBtnVisible && (
+              <button type="button" onClick={addExercise}
+                className="w-full mt-2 py-2.5 text-xs font-semibold rounded-lg transition-colors"
+                style={{ color: 'var(--color-accent)', border: '1px dashed var(--color-accent)', background: 'rgba(200,241,53,0.05)' }}>
+                + Add exercise
               </button>
-            </div>
+            )}
+          </div>
+
+          <LabeledInput label="Notes — optional">
+            <textarea rows={2} value={form.notes} onChange={set('notes')} className="resize-none field-input" placeholder="How it felt, anything to remember…" />
+          </LabeledInput>
+
+          <p className="text-[11px]" style={{ color: 'var(--color-secondary)' }}>
+            🔥 Calories burned is estimated automatically from your body weight, duration, and the exercises above — same method used for PT sessions.
+          </p>
+
+          <div className="flex gap-3 pt-1">
+            <button onClick={onClose} className="flex-1 py-3 text-sm font-semibold transition-all rounded-xl"
+              style={{ background: 'var(--color-surface-3)', color: 'var(--color-primary)' }}>Cancel</button>
+            <button onClick={save} disabled={saving} className="flex-[2] py-3 text-sm font-bold transition-all rounded-xl disabled:opacity-60"
+              style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
+              {saving ? 'Saving…' : initial ? 'Update workout' : 'Save workout'}
+            </button>
           </div>
         </div>
       </div>
-      {showCopyModal && (
-        <CopyExercisesModal
-          logs={(history || []).filter((l) => l._id !== initial?._id)}
-          onClose={() => setShowCopyModal(false)}
-          onCopy={copyExercises}
-        />
-      )}
+    </div>
+    {showCopyModal && (
+      <CopyExercisesModal
+        logs={(history || []).filter((l) => l._id !== initial?._id)}
+        onClose={() => setShowCopyModal(false)}
+        onCopy={copyExercises}
+      />
+    )}
     </>
   )
 }
@@ -209,6 +235,29 @@ export function WorkoutLogDetail({ log, history, onBack, onEdit, onDelete }) {
   const [showConfirm, setShowConfirm] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const [showPR, setShowPR] = useState(false)
+  const [shareStatus, setShareStatus] = useState('')
+  const [sharing, setSharing] = useState(false)
+
+  async function handleShare() {
+    setSharing(true)
+    try {
+      const data = buildWorkoutLogShareData(log)
+      const imageBlob = await generateShareImage(data)
+      const result = await shareContent({ title: log.title, text: shareDataToText(data), imageBlob })
+      if (result === 'copied') {
+        setShareStatus('Copied to clipboard!')
+        setTimeout(() => setShareStatus(''), 2000)
+      } else if (result === 'downloaded') {
+        setShareStatus('Image saved!')
+        setTimeout(() => setShareStatus(''), 2000)
+      } else if (result === 'failed') {
+        setShareStatus('Could not share — try again')
+        setTimeout(() => setShareStatus(''), 2000)
+      }
+    } finally {
+      setSharing(false)
+    }
+  }
 
   async function handleDelete() {
     setDeleting(true)
@@ -224,9 +273,22 @@ export function WorkoutLogDetail({ log, history, onBack, onEdit, onDelete }) {
 
   return (
     <div className="flex flex-col gap-5 animate-fade-up">
-      <button onClick={onBack} className="flex items-center gap-2 text-sm transition-colors" style={{ color: 'var(--color-secondary)' }}>
-        ← Back to workouts
-      </button>
+      <div className="flex items-center justify-between">
+        <button onClick={onBack} className="flex items-center gap-2 text-sm transition-colors" style={{ color: 'var(--color-secondary)' }}>
+          ← Back to workouts
+        </button>
+        <button
+          onClick={handleShare}
+          disabled={sharing}
+          className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full transition-all disabled:opacity-60"
+          style={{ background: 'var(--color-surface-3)', color: 'var(--color-primary)', border: '1px solid var(--color-border)' }}
+        >
+          <ShareIcon size={14} /> {sharing ? 'Preparing…' : 'Share'}
+        </button>
+      </div>
+      {shareStatus && (
+        <p className="-mt-3 text-xs text-center" style={{ color: 'var(--color-accent)' }}>{shareStatus}</p>
+      )}
 
       <div>
         <h2 className="text-xl font-bold" style={{ color: 'var(--color-primary)' }}>{log.title}</h2>

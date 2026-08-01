@@ -6,6 +6,14 @@ export const authApi = {
   logout: () => api.post('/member-portal/auth/logout'),
   me: () => api.get('/member-portal/auth/me'),
   changePin: (data) => api.post('/member-portal/auth/change-pin', data),
+
+  // Fingerprint / biometric login (WebAuthn)
+  webauthnLoginOptions: (data) => api.post('/member-portal/auth/webauthn/login-options', data),
+  webauthnLoginVerify: (data) => api.post('/member-portal/auth/webauthn/login-verify', data),
+  webauthnList: () => api.get('/member-portal/auth/webauthn'),
+  webauthnRegisterOptions: () => api.post('/member-portal/auth/webauthn/register-options'),
+  webauthnRegisterVerify: (response, deviceName) => api.post('/member-portal/auth/webauthn/register-verify', { response, deviceName }),
+  webauthnRemove: (credentialId) => api.delete(`/member-portal/auth/webauthn/${credentialId}`),
 }
 
 export const portalApi = {

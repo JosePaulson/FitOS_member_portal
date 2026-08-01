@@ -1,22 +1,38 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useMemberAuth } from '../context/MemberAuthContext'
 import { ThemeToggle } from '../components/ui/Spinner'
 import { useThemeContext } from '../context/ThemeContext'
 import { useInstallPrompt } from '../context/InstallPromptContext'
 import InstallPrompt from '../components/InstallPrompt'
+import { fingerprintLoginAvailable, loginWithFingerprint } from '../lib/webauthn'
+
+const LAST_GYM_KEY = 'fitos_last_gym_subdomain'
+const LAST_PHONE_KEY = 'fitos_last_phone'
 
 export default function Login() {
-  const { login } = useMemberAuth()
+  const { login, loginWithData } = useMemberAuth()
   const { isDark, toggle } = useThemeContext()
   const { showBanner, showIOSBanner } = useInstallPrompt()
   const navigate = useNavigate()
 
-  const [step, setStep] = useState(0)
-  const [form, setForm] = useState({ subdomain: '', phone: '', pin: '' })
+  const rememberedGym = (() => { try { return localStorage.getItem(LAST_GYM_KEY) || '' } catch { return '' } })()
+  const rememberedPhone = (() => { try { return localStorage.getItem(LAST_PHONE_KEY) || '' } catch { return '' } })()
+
+  // Skip straight to phone/PIN when we already know the gym — no need to
+  // ask again on the same device.
+  const [step, setStep] = useState(rememberedGym ? 1 : 0)
+  const [form, setForm] = useState({ subdomain: rememberedGym, phone: rememberedPhone, pin: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPin, setShowPin] = useState(false)
+
+  const [fingerprintSupported, setFingerprintSupported] = useState(false)
+  const [fingerprintBusy, setFingerprintBusy] = useState(false)
+
+  useEffect(() => {
+    fingerprintLoginAvailable().then(setFingerprintSupported)
+  }, [])
 
   const set = (f) => (e) => setForm((v) => ({ ...v, [f]: e.target.value }))
 
@@ -31,10 +47,32 @@ export default function Login() {
     setLoading(true)
     try {
       await login(form.subdomain, form.phone, form.pin)
+      try { localStorage.setItem(LAST_PHONE_KEY, form.phone) } catch { /* ignore */ }
       navigate('/', { replace: true })
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed')
     } finally { setLoading(false) }
+  }
+
+  async function handleFingerprintLogin() {
+    setError('')
+    if (!form.subdomain.trim() || !form.phone.trim()) {
+      setError('Enter your gym ID and phone number first')
+      return
+    }
+    setFingerprintBusy(true)
+    try {
+      const data = await loginWithFingerprint(form.subdomain, form.phone)
+      loginWithData(data)
+      try { localStorage.setItem(LAST_PHONE_KEY, form.phone) } catch { /* ignore */ }
+      navigate('/', { replace: true })
+    } catch (err) {
+      if (err?.name === 'NotAllowedError') {
+        // The person cancelled the fingerprint prompt — not a real error.
+      } else {
+        setError(err.response?.data?.message || 'Fingerprint login failed — try your PIN instead')
+      }
+    } finally { setFingerprintBusy(false) }
   }
 
   return (
@@ -113,12 +151,33 @@ export default function Login() {
                 <button type="button" onClick={() => { setStep(0); setError('') }}
                   className="flex items-center gap-1.5 text-sm mb-1 transition-colors"
                   style={{ color: 'var(--color-secondary)' }}>
-                  ← {form.subdomain}
+                  ← {form.subdomain} <span style={{ color: 'var(--color-accent)' }}>· change</span>
                 </button>
+
+                {fingerprintSupported && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleFingerprintLogin}
+                      disabled={fingerprintBusy}
+                      className="flex items-center justify-center w-full gap-2 py-3 mt-1 text-sm font-semibold transition-all border rounded-lg disabled:opacity-60"
+                      style={{ borderColor: 'var(--color-accent)', color: 'var(--color-accent)' }}
+                    >
+                      <FingerprintIcon />
+                      {fingerprintBusy ? 'Checking…' : 'Sign in with fingerprint'}
+                    </button>
+                    <div className="flex items-center gap-3 my-1">
+                      <div className="flex-1 h-px" style={{ background: 'var(--color-border-strong)' }} />
+                      <span className="text-[11px]" style={{ color: 'var(--color-secondary)' }}>or use your PIN</span>
+                      <div className="flex-1 h-px" style={{ background: 'var(--color-border-strong)' }} />
+                    </div>
+                  </>
+                )}
+
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-medium" style={{ color: 'var(--color-secondary)' }}>Phone number</label>
                   <input type="tel" placeholder="+91 98765 43210" value={form.phone}
-                    onChange={set('phone')} className="field-input" autoFocus />
+                    onChange={set('phone')} className="field-input" autoFocus={!fingerprintSupported} />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-medium" style={{ color: 'var(--color-secondary)' }}>PIN</label>
@@ -156,5 +215,18 @@ export default function Login() {
 
       <InstallPrompt withTabBar={false} />
     </div>
+  )
+}
+
+function FingerprintIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 11c.5 2 .5 4.5-1 7" />
+      <path d="M8.5 19c1.5-2 2-4.5 2-6a1.5 1.5 0 0 1 3 0" />
+      <path d="M5 15.5c.7-1.5 1-3 1-4.5a6 6 0 0 1 11 3.5" />
+      <path d="M3.5 12a8.5 8.5 0 0 1 15-5.4" />
+      <path d="M17 4.5A8.5 8.5 0 0 1 20.5 12c0 1 0 2-.5 3.5" />
+      <path d="M9 4.8A8.4 8.4 0 0 1 12 4.3" />
+    </svg>
   )
 }

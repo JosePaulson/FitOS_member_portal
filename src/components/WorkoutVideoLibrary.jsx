@@ -72,6 +72,12 @@ export default function WorkoutVideoLibrary({ onClose }) {
 
   const [group, setGroup] = useState(null)
   const [index, setIndex] = useState(0)
+  // Which variant of the current exercise is showing — most exercises
+  // have exactly one video, but when a category has two+ entries sharing
+  // the same exercise name (e.g. a front-view and a side-view demo),
+  // they're treated as variants of one step in the sequence rather than
+  // two separate steps, switchable via the "Swap" pill.
+  const [variantIndex, setVariantIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [phase, setPhase] = useState('exercise') // exercise | resting | group-complete
   const [restDuration, setRestDuration] = useState(() => readStoredRestDuration())
@@ -105,18 +111,37 @@ export default function WorkoutVideoLibrary({ onClose }) {
   }, [catalogLoading, videosLoading])
 
   const videos = (group && videosByCategory[group]) || []
-  const current = videos[index]
-  const isLast = index >= videos.length - 1
+  // Group same-category videos by exercise name, preserving the admin-set
+  // order — each entry is one step in the sequence, potentially with
+  // multiple video variants to swap between.
+  const exerciseGroups = useMemo(() => {
+    const map = new Map()
+    for (const item of videos) {
+      if (!map.has(item.name)) map.set(item.name, { name: item.name, variants: [] })
+      map.get(item.name).variants.push(item)
+    }
+    return [...map.values()]
+  }, [videos])
+  const currentGroup = exerciseGroups[index]
+  const current = currentGroup?.variants[variantIndex]
+  const isLast = index >= exerciseGroups.length - 1
 
-  // Reset to the first exercise whenever the muscle group changes.
+  // Reset to the first exercise (and first variant) whenever the muscle
+  // group changes.
   useEffect(() => {
     setIndex(0)
+    setVariantIndex(0)
     setPhase('exercise')
     setPlaying(false)
     setShowControls(true)
     clearRestTimer()
     clearHideTimer()
   }, [group])
+
+  function swapVariant() {
+    if (!currentGroup || currentGroup.variants.length < 2) return
+    setVariantIndex((v) => (v + 1) % currentGroup.variants.length)
+  }
 
   // A new clip is about to load — show the buffering spinner and reset
   // the countdown until the new video's metadata comes in.
@@ -126,14 +151,14 @@ export default function WorkoutVideoLibrary({ onClose }) {
     setRemainingSec(current?.videoDurationSec ? Math.ceil(current.videoDurationSec) : null)
   }, [index, group, current?._id])
 
-  // Keep the <video> element in sync with exercise changes.
+  // Keep the <video> element in sync with exercise/variant changes.
   useEffect(() => {
     const el = videoRef.current
     if (!el) return
     el.currentTime = 0
     if (playing) el.play().catch(() => {})
     else el.pause()
-  }, [index, group])
+  }, [current?._id])
 
   // Keep the <video> element in sync with play/pause toggles.
   useEffect(() => {
@@ -223,14 +248,15 @@ export default function WorkoutVideoLibrary({ onClose }) {
       setPlaying(false)
     } else {
       setIndex((i) => i + 1)
+      setVariantIndex(0)
       setPhase('exercise')
       setPlaying(true) // auto-play the next available video
     }
   }
 
   function markComplete() {
-    if (!current) return
-    setCompleted((prev) => new Set(prev).add(current._id))
+    if (!currentGroup) return
+    setCompleted((prev) => new Set(prev).add(currentGroup.name))
     setPlaying(false)
     setPhase('resting')
   }
@@ -245,6 +271,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
     clearRestTimer()
     setPhase('exercise')
     setPlaying(false)
+    setVariantIndex(0)
     setIndex((i) => i - 1)
   }
 
@@ -253,11 +280,13 @@ export default function WorkoutVideoLibrary({ onClose }) {
     clearRestTimer()
     setPhase('exercise')
     setPlaying(false)
+    setVariantIndex(0)
     setIndex((i) => i + 1)
   }
 
   function replayGroup() {
     setIndex(0)
+    setVariantIndex(0)
     setPhase('exercise')
     setPlaying(false)
   }
@@ -268,8 +297,8 @@ export default function WorkoutVideoLibrary({ onClose }) {
   }
 
   const groupCompletedCount = useMemo(
-    () => videos.filter((v) => completed.has(v._id)).length,
-    [videos, completed]
+    () => exerciseGroups.filter((g) => completed.has(g.name)).length,
+    [exerciseGroups, completed]
   )
 
   return (
@@ -294,7 +323,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
           </button>
           {current && (
             <span className="text-xs font-bold tracking-wide" style={{ color: 'rgba(255,255,255,0.85)' }}>
-              {index + 1} / {videos.length}
+              {index + 1} / {exerciseGroups.length}
             </span>
           )}
         </div>
@@ -403,8 +432,18 @@ export default function WorkoutVideoLibrary({ onClose }) {
                     {remainingSec != null && videoDuration != null && (
                       <DurationRing remaining={remainingSec} total={videoDuration} />
                     )}
+                    {currentGroup?.variants.length > 1 && (
+                      <button
+                        onClick={swapVariant}
+                        className="pointer-events-auto text-[11px] font-bold px-2.5 py-1 rounded-full transition-all active:scale-95"
+                        style={{ background: 'rgba(168,85,247,0.25)', color: '#fff', backdropFilter: 'blur(4px)' }}
+                        aria-label="Switch to the other video for this exercise"
+                      >
+                        ⇄ Swap
+                      </button>
+                    )}
                   </div>
-                  {completed.has(current._id) && (
+                  {completed.has(currentGroup?.name) && (
                     <span
                       className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full"
                       style={{ background: 'rgba(200,241,53,0.18)', color: S.accent, border: '1px solid rgba(200,241,53,0.3)' }}
@@ -428,7 +467,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
                 onAdjust={adjustRest}
                 minSeconds={REST_MIN_SECONDS}
                 maxSeconds={REST_MAX_SECONDS}
-                nextName={!isLast ? videos[index + 1]?.name : null}
+                nextName={!isLast ? exerciseGroups[index + 1]?.name : null}
               />
             )}
 
@@ -436,7 +475,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
             {phase === 'group-complete' && (
               <GroupCompleteOverlay
                 groupLabel={MUSCLE_GROUPS.find((g) => g.key === group)?.label}
-                count={videos.length}
+                count={exerciseGroups.length}
                 onReplay={replayGroup}
                 onClose={onClose}
                 groups={MUSCLE_GROUPS.filter((g) => (videosByCategory[g.key] || []).length > 0)}
@@ -460,15 +499,15 @@ export default function WorkoutVideoLibrary({ onClose }) {
           }}
         >
           <div className="flex items-center justify-center gap-1.5">
-            {videos.map((v, i) => (
+            {exerciseGroups.map((g, i) => (
               <button
-                key={v._id}
-                onClick={() => { clearRestTimer(); setPhase('exercise'); setPlaying(false); setShowControls(true); setIndex(i) }}
+                key={g.name}
+                onClick={() => { clearRestTimer(); setPhase('exercise'); setPlaying(false); setShowControls(true); setVariantIndex(0); setIndex(i) }}
                 className="rounded-full transition-all"
                 style={{
                   width: i === index ? 18 : 6,
                   height: 6,
-                  background: completed.has(v._id) ? S.accent : i === index ? S.primary : S.border,
+                  background: completed.has(g.name) ? S.accent : i === index ? S.primary : S.border,
                 }}
                 aria-label={`Go to exercise ${i + 1}`}
               />
@@ -490,7 +529,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
               className="flex-1 py-2.5 text-xs font-bold rounded-xl transition-all active:scale-[0.98]"
               style={{ background: S.accent, color: '#0D0D0D', boxShadow: '0 6px 16px rgba(200,241,53,0.25)' }}
             >
-              {completed.has(current._id) ? '✓ Completed — rest again' : `Mark complete · rest ${restDuration}s`}
+              {completed.has(currentGroup?.name) ? '✓ Completed — rest again' : `Mark complete · rest ${restDuration}s`}
             </button>
             <button
               onClick={goNext}
@@ -504,7 +543,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
           </div>
 
           <p className="text-[11px] text-center" style={{ color: S.secondary }}>
-            {groupCompletedCount} of {videos.length} {MUSCLE_GROUPS.find((g) => g.key === group)?.label.toLowerCase()} exercises done
+            {groupCompletedCount} of {exerciseGroups.length} {MUSCLE_GROUPS.find((g) => g.key === group)?.label.toLowerCase()} exercises done
           </p>
         </div>
       )}
