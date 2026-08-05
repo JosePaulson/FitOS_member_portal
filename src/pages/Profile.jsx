@@ -11,6 +11,7 @@ import { useAnchorScroll } from '../hooks/useAnchorScroll'
 import { readCache, writeCache } from '../lib/offline'
 import { istDayName } from '../lib/dateIST'
 import { fingerprintLoginAvailable, registerFingerprint } from '../lib/webauthn'
+import { APP_VERSION } from '../version'
 
 // Calendar-day key from a Date's LOCAL date parts — NOT toISOString(), which
 // gives the UTC date and silently shifts anything before ~5:30am IST onto
@@ -143,13 +144,16 @@ export default function Profile() {
           const records = attRes.data.records
           const streakVal = attRes.data.streak
           const confirmed = (ptRes.data.sessions || []).filter((s) => ['scheduled', 'completed'].includes(s.status))
+          // A day can have more than one PT session (e.g. two different
+          // trainers, or a re-booked slot) — keep all of them per date
+          // instead of collapsing to a single entry, or a session silently
+          // "disappears" from the calendar and the day's true session count
+          // no longer matches what's actually scheduled/completed.
           const ptMap = new Map()
           for (const s of confirmed) {
             const key = localDateKey(s.date)
-            const existing = ptMap.get(key)
-            // Prefer the session that actually has a body weight recorded,
-            // so the calendar can show it under the date.
-            if (!existing || (!existing.bodyWeight && s.bodyWeight)) ptMap.set(key, s)
+            if (!ptMap.has(key)) ptMap.set(key, [])
+            ptMap.get(key).push(s)
           }
           const logMap = new Map()
           for (const log of logsRes.data.logs || []) {
@@ -251,8 +255,11 @@ export default function Profile() {
   const totalCheckins = totalCheckinDates.size
 
   // "Total PT" only counts sessions that actually happened — scheduled
-  // (not-yet-completed) ones don't count toward this stat.
-  const completedPTCount = [...ptSessionsByDate.values()].filter((s) => s.status === 'completed').length
+  // (not-yet-completed) ones don't count toward this stat. Sum every
+  // completed session across every day, not just days that have one —
+  // two completed sessions on the same day must both count.
+  const completedPTCount = [...ptSessionsByDate.values()]
+    .reduce((sum, sessions) => sum + sessions.filter((s) => s.status === 'completed').length, 0)
 
   function prevMonth() {
     const d = new Date(calYear, calMonth - 2, 1)
@@ -469,9 +476,18 @@ export default function Profile() {
               const day = i + 1
               const dateStr = `${calYear}-${String(calMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`
               const attended = attendedDates.has(dateStr)
-              const ptSession = ptSessionsByDate.get(dateStr)
-              const ptSessionStatus = ptSessionsByDate.get(dateStr)?.status
+              const ptSessionsToday = ptSessionsByDate.get(dateStr) || []
+              // For the small calendar cell, show whichever session is most
+              // informative: a completed one over a merely-scheduled one,
+              // and among ties, prefer one with a body weight logged.
+              const ptSession = ptSessionsToday.slice().sort((a, b) => {
+                if (a.status !== b.status) return a.status === 'completed' ? -1 : 1
+                if (!!a.bodyWeight !== !!b.bodyWeight) return a.bodyWeight ? -1 : 1
+                return 0
+              })[0]
+              const ptSessionStatus = ptSession?.status
               const hasPT = !!ptSession
+              const extraPTCount = Math.max(ptSessionsToday.length - 1, 0)
               const workoutLog = workoutLogsByDate.get(dateStr)
               const hasLog = !!workoutLog
               const isToday = dateStr === today
@@ -528,9 +544,9 @@ export default function Profile() {
                   {hasPT && (
                     <span
                       className="absolute -top-0 -right-0 w-3.5 h-3.5 rounded-bl-full rounded-tr-[10px] flex items-center justify-center text-[5.5px] font-bold leading-none text-[#fafafa]"
-                      title="PT session"
+                      title={extraPTCount > 0 ? `${ptSessionsToday.length} PT sessions` : 'PT session'}
                     >
-                      PT
+                      {extraPTCount > 0 ? `${ptSessionsToday.length}×` : 'PT'}
                     </span>
                   )}
                 </div>
@@ -769,6 +785,8 @@ export default function Profile() {
         onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(248,113,113,0.05)'}>
         {logoutBusy ? 'Signing out…' : 'Sign out'}
       </button>
+
+      <p className="text-center text-[11px] pt-1" style={{ color: S.secondary }}>Version {APP_VERSION}</p>
 
       <div className="h-2" />
 

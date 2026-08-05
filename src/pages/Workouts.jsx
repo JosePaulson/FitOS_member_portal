@@ -1098,11 +1098,6 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
     </div>
   )
 
-  const bwVals = progress.map((p) => p.bodyWeight)
-  const bwMin = bwVals.length ? Math.min(...bwVals) : 0
-  const bwMax = bwVals.length ? Math.max(...bwVals) : 1
-  const bwRange = bwMax - bwMin || 1
-
   return (
     <div className="flex flex-col gap-5">
       {activePlans.length > 0
@@ -1135,28 +1130,18 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
         ))}
       </div>
 
-      {/* Body weight progress chart */}
+      {/* Body weight progress — only the start and most recent readings are
+          called out as real numbers; the wave in between is decorative
+          (not plotted from the actual in-between readings), since with
+          many entries a literal bar-per-reading chart got noisy and hard
+          to read at a glance. */}
       {progress.length > 1 && (
         <div className="p-4 card">
           <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>
             Body weight progress
           </h3>
-          <div className="flex items-end gap-1 h-14">
-            {progress.map((p, i) => {
-              const pct = ((p.bodyWeight - bwMin) / bwRange) * 100
-              const barH = `${Math.max(10, pct)}%`
-              return (
-                <div key={i} className="flex flex-col items-center flex-1 gap-1">
-                  <span className="text-[9px] font-semibold" style={{ color: 'var(--color-accent)' }}>
-                    {p.bodyWeight}
-                  </span>
-                  <div className="w-full rounded-t" style={{ height: barH, background: 'rgba(200,241,53,0.35)' }} />
-                  <span className="text-[8px]" style={{ color: 'var(--color-secondary)' }}>
-                    {new Date(p.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                  </span>
-                </div>
-              )
-            })}
+          <div className="h-14">
+            <SineWave height={56} />
           </div>
           <div className="flex justify-between mt-2 text-xs" style={{ color: 'var(--color-secondary)' }}>
             <span>Start: {progress[0].bodyWeight} kg</span>
@@ -1480,5 +1465,31 @@ function BookingModal({ onClose, onBooked }) {
         )}
       </div>
     </div>
+  )
+}
+/**
+ * Purely decorative animated-looking sine wave used in place of a literal
+ * per-reading bar chart for body weight progress — the real numbers (start
+ * vs. most recent) are called out separately as text, so this doesn't need
+ * to encode exact data points, just read as "a trend."
+ */
+function SineWave({ height = 56 }) {
+  const width = 300
+  const midY = height / 2
+  const amplitude = height * 0.32
+  const cycles = 2.5
+
+  let d = `M 0 ${midY}`
+  const steps = 60
+  for (let i = 1; i <= steps; i++) {
+    const x = (width / steps) * i
+    const y = midY - Math.sin((i / steps) * cycles * Math.PI * 2) * amplitude
+    d += ` L ${x.toFixed(1)} ${y.toFixed(1)}`
+  }
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="w-full h-full">
+      <path d={d} fill="none" stroke="var(--color-accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.55" />
+    </svg>
   )
 }

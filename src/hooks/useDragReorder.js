@@ -16,6 +16,14 @@ import { useEffect, useRef, useState } from 'react'
  * `onReorder(newOrderedItems)` fires once, when the drag ends — not on
  * every intermediate swap — so callers can safely persist it (e.g. one
  * API call) without debouncing.
+ *
+ * move/up tracking lives on `window`, not on the handle element itself.
+ * Rows are rendered with an index-based key, so mid-drag reordering
+ * causes React to reuse/reassign existing DOM nodes to whichever item
+ * now sits at that position — the specific node the drag started on can
+ * end up representing a different list item after the first swap. Pointer
+ * capture set on that original node doesn't follow the item being
+ * dragged, so listening on window instead sidesteps the whole issue.
  */
 export function useDragReorder(items, onReorder) {
   const [list, setList] = useState(items)
@@ -25,6 +33,8 @@ export function useDragReorder(items, onReorder) {
   listRef.current = list
   const dragIndexRef = useRef(null)
   dragIndexRef.current = dragIndex
+  const onReorderRef = useRef(onReorder)
+  onReorderRef.current = onReorder
 
   // Stay in sync with the caller's data whenever we're not mid-drag.
   useEffect(() => {
@@ -46,37 +56,51 @@ export function useDragReorder(items, onReorder) {
     return rects.length - 1
   }
 
-  function handlePointerMove(e) {
-    if (dragIndexRef.current === null) return
-    const target = computeTargetIndex(e.clientY)
-    if (target >= 0 && target !== dragIndexRef.current) {
-      setList((prev) => {
-        const next = [...prev]
-        const [moved] = next.splice(dragIndexRef.current, 1)
-        next.splice(target, 0, moved)
-        return next
-      })
-      setDragIndex(target)
-    }
-  }
+  // Active only while a drag is in progress. Attaching to window (rather
+  // than the handle element + pointer capture) means it keeps working no
+  // matter what React does with the underlying DOM nodes as the list
+  // reorders mid-drag. Keyed off "is a drag active" rather than the exact
+  // index, so the listeners are set up once at drag start and torn down
+  // once at drag end — not re-subscribed every time the pointer crosses a
+  // row boundary (dragIndexRef/listRef stay current regardless).
+  useEffect(() => {
+    if (dragIndex === null) return
 
-  function handlePointerUp(e) {
-    if (dragIndexRef.current === null) return
-    try { e.currentTarget.releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
-    onReorder(listRef.current)
-    setDragIndex(null)
-  }
+    function handleMove(e) {
+      if (e.cancelable) e.preventDefault()
+      const target = computeTargetIndex(e.clientY)
+      if (target >= 0 && target !== dragIndexRef.current) {
+        setList((prev) => {
+          const next = [...prev]
+          const [moved] = next.splice(dragIndexRef.current, 1)
+          next.splice(target, 0, moved)
+          return next
+        })
+        setDragIndex(target)
+      }
+    }
+    function handleUp() {
+      onReorderRef.current(listRef.current)
+      setDragIndex(null)
+    }
+
+    window.addEventListener('pointermove', handleMove, { passive: false })
+    window.addEventListener('pointerup', handleUp)
+    window.addEventListener('pointercancel', handleUp)
+    return () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+      window.removeEventListener('pointercancel', handleUp)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragIndex === null])
 
   function getHandleProps(index) {
     return {
       onPointerDown: (e) => {
         e.preventDefault()
-        try { e.currentTarget.setPointerCapture?.(e.pointerId) } catch { /* ignore */ }
         setDragIndex(index)
       },
-      onPointerMove: handlePointerMove,
-      onPointerUp: handlePointerUp,
-      onPointerCancel: handlePointerUp,
       style: { touchAction: 'none', cursor: dragIndex === null ? 'grab' : 'grabbing' },
     }
   }

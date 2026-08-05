@@ -10,8 +10,11 @@ import { computePR, formatPR } from '../lib/exercisePR'
  *
  * `history` is an array of past logs ({ exercises: [...] }) used to look up
  * PRs. `onChange(field, value)` mirrors the parent's updateExercise(i, ...).
+ * `dragHandleProps`, if given, is spread onto a small grip icon rendered
+ * inside this row's own top-left corner, to the left of the muscle group
+ * chips — so the whole draggable row is visually self-contained.
  */
-export default function ExerciseRow({ exercise, onChange, onRemove, history, showRemove }) {
+export default function ExerciseRow({ exercise, onChange, onRemove, history, showRemove, dragHandleProps }) {
   const { muscleGroups: MUSCLE_GROUPS, catalog: EXERCISE_CATALOG } = useExerciseCatalog()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState(exercise.name || '')
@@ -62,23 +65,36 @@ export default function ExerciseRow({ exercise, onChange, onRemove, history, sho
   return (
     <div className="flex items-start gap-2 p-3 rounded-lg" style={{ background: 'var(--color-surface-2)' }}>
       <div className="flex-1 min-w-0">
-        {/* Muscle group chips */}
-        <div className="flex gap-1.5 pb-2 -mx-1 px-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-          {MUSCLE_GROUPS.map((g) => {
-            const active = exercise.muscleGroup === g.key
-            return (
-              <button
-                key={g.key} type="button"
-                onClick={() => pickGroup(g.key)}
-                className="px-2.5 py-1 text-[10px] font-semibold rounded-full whitespace-nowrap shrink-0 transition-all"
-                style={active
-                  ? { background: 'var(--color-accent)', color: '#0D0D0D' }
-                  : { background: 'var(--color-surface-3)', color: 'var(--color-secondary)' }}
-              >
-                {g.label}
-              </button>
-            )
-          })}
+        {/* Drag handle (if draggable) + muscle group chips, in one row */}
+        <div className="flex items-center gap-1.5 pb-2">
+          {dragHandleProps && (
+            <span
+              {...dragHandleProps}
+              aria-label="Drag to reorder"
+              title="Drag to reorder"
+              className="flex items-center justify-center shrink-0 select-none rounded-md -m-1.5 p-1.5 text-lg leading-none transition-colors hover:bg-white/10 active:bg-white/15"
+              style={{ ...dragHandleProps.style, color: 'var(--color-secondary)', WebkitUserSelect: 'none', touchAction: 'none' }}
+            >
+              ⠿
+            </span>
+          )}
+          <div className="flex gap-1.5 -mx-1 px-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+            {MUSCLE_GROUPS.map((g) => {
+              const active = exercise.muscleGroup === g.key
+              return (
+                <button
+                  key={g.key} type="button"
+                  onClick={() => pickGroup(g.key)}
+                  className="px-2.5 py-1 text-[10px] font-semibold rounded-full whitespace-nowrap shrink-0 transition-all"
+                  style={active
+                    ? { background: 'var(--color-accent)', color: '#0D0D0D' }
+                    : { background: 'var(--color-surface-3)', color: 'var(--color-secondary)' }}
+                >
+                  {g.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         {/* Name field + suggestions */}

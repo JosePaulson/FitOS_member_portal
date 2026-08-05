@@ -65,7 +65,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
         }
         setVideosByCategory(grouped)
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => { if (!cancelled) setVideosLoading(false) })
     return () => { cancelled = true }
   }, [])
@@ -156,7 +156,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
     const el = videoRef.current
     if (!el) return
     el.currentTime = 0
-    if (playing) el.play().catch(() => {})
+    if (playing) el.play().catch(() => { })
     else el.pause()
   }, [current?._id])
 
@@ -165,7 +165,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
     const el = videoRef.current
 
     if (!el) return
-    if (playing) el.play().catch(() => {})
+    if (playing) el.play().catch(() => { })
     else el.pause()
   }, [playing])
 
@@ -316,7 +316,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
           <button
             onClick={onClose}
             aria-label="Close"
-            className="flex items-center justify-center w-9 h-9 transition-all rounded-full active:scale-90"
+            className="flex items-center justify-center transition-all rounded-full w-9 h-9 active:scale-90"
             style={{ background: 'rgba(255,255,255,0.12)', color: '#fff', backdropFilter: 'blur(4px)' }}
           >
             <CloseIcon />
@@ -327,7 +327,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
             </span>
           )}
         </div>
-        <div className="flex gap-2 overflow-x-auto -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+        <div className="flex gap-2 px-1 -mx-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           {MUSCLE_GROUPS.map((g) => {
             const active = g.key === group
             return (
@@ -364,7 +364,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
               loop
               muted
               playsInline
-              className="absolute inset-0 object-cover w-full h-full"
+              className="absolute inset-0 object-contain w-full h-full"
               style={{ opacity: phase === 'resting' ? 0.25 : 1, transition: 'opacity 0.3s' }}
               onLoadedMetadata={(e) => {
                 const d = e.currentTarget.duration
@@ -423,11 +423,11 @@ export default function WorkoutVideoLibrary({ onClose }) {
                 exercise screen. */}
             {phase === 'exercise' && (
               <div
-                className="absolute bottom-0 inset-x-0 z-10 flex flex-col gap-2 px-5 pt-10 pb-4 pointer-events-none"
+                className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-2 px-5 pt-10 pb-4 pointer-events-none"
                 style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)' }}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <h2 className="text-lg font-bold leading-snug" style={{ color: '#fff' }}>{current.name}</h2>
                     {remainingSec != null && videoDuration != null && (
                       <DurationRing remaining={remainingSec} total={videoDuration} />
@@ -503,7 +503,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
               <button
                 key={g.name}
                 onClick={() => { clearRestTimer(); setPhase('exercise'); setPlaying(false); setShowControls(true); setVariantIndex(0); setIndex(i) }}
-                className="rounded-full transition-all"
+                className="transition-all rounded-full"
                 style={{
                   width: i === index ? 18 : 6,
                   height: 6,
@@ -615,7 +615,7 @@ function GroupCompleteOverlay({ groupLabel, count, onReplay, onClose, groups, cu
       <span className="text-5xl">🎉</span>
       <div>
         <p className="text-lg font-bold" style={{ color: '#fff' }}>{groupLabel} complete!</p>
-        <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.65)' }}>You finished all {count} exercises.</p>
+        <p className="mt-1 text-xs" style={{ color: 'rgba(255,255,255,0.65)' }}>You finished all {count} exercises.</p>
       </div>
       <div className="flex flex-col w-full max-w-xs gap-2 mt-2">
         <button

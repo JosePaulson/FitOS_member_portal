@@ -10,6 +10,22 @@ import { useExerciseCatalog } from '../hooks/useExerciseCatalog'
 import { useDragReorder } from '../hooks/useDragReorder'
 import { toISTInputValue, parseISTInputValue, fmtISTDateTime } from '../lib/dateIST'
 
+// Exercises were keyed by their array index in the list below, which is
+// exactly the wrong key for a reorderable list: on every drag, React sees
+// "same key at this position" and reuses that row's DOM/state for whatever
+// exercise now lands there instead of following the exercise that moved —
+// so the row under the pointer doesn't reliably track the dragged item.
+// Giving each exercise a stable id up front (independent of its position)
+// fixes that; ids are for React's reconciliation only and are stripped
+// before saving.
+let nextExerciseKey = 0
+function withKey(exercise) {
+  return exercise._key ? exercise : { ...exercise, _key: `ex-${Date.now()}-${nextExerciseKey++}` }
+}
+function stripKey({ _key, ...rest }) {
+  return rest
+}
+
 /** Create/edit form for a self-logged workout — exercises, body weight, duration, time. */
 export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
   const [form, setForm] = useState({
@@ -18,7 +34,7 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
     durationMinutes: initial?.durationMinutes || 60,
     bodyWeight: initial?.bodyWeight ?? '',
     notes: initial?.notes || '',
-    exercises: initial?.exercises?.length ? initial.exercises : [{ name: '', sets: '', reps: '', weight: '', muscleGroup: '' }],
+    exercises: (initial?.exercises?.length ? initial.exercises : [{ name: '', sets: '', reps: '', weight: '', muscleGroup: '' }]).map(withKey),
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -51,7 +67,7 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
 
   function addExercise() {
     setScrollToIndex(form.exercises.length) // index the new row will land at
-    setForm((v) => ({ ...v, exercises: [...v.exercises, { name: '', sets: '', reps: '', weight: '', muscleGroup: '' }] }))
+    setForm((v) => ({ ...v, exercises: [...v.exercises, withKey({ name: '', sets: '', reps: '', weight: '', muscleGroup: '' })] }))
   }
 
   useEffect(() => {
@@ -80,7 +96,7 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
 
   const [showCopyModal, setShowCopyModal] = useState(false)
   function copyExercises(copied) {
-    setForm((v) => ({ ...v, exercises: [...v.exercises.filter((e) => e.name.trim()), ...copied] }))
+    setForm((v) => ({ ...v, exercises: [...v.exercises.filter((e) => e.name.trim()), ...copied.map(withKey)] }))
     setShowCopyModal(false)
   }
 
@@ -101,7 +117,7 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
         durationMinutes: Number(form.durationMinutes) || 60,
         bodyWeight: form.bodyWeight === '' ? undefined : Number(form.bodyWeight),
         notes: form.notes,
-        exercises: form.exercises.filter((e) => e.name.trim()),
+        exercises: form.exercises.filter((e) => e.name.trim()).map(stripKey),
       }
       const { data: saved } = initial
         ? await portalApi.updateWorkoutLog(initial._id, payload)
@@ -132,7 +148,7 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
             <input type="text" value={form.title} onChange={set('title')} className="field-input" placeholder="Leg day, morning run…" />
           </LabeledInput>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <LabeledInput label="Date & time">
               <input type="datetime-local" value={form.when} onChange={set('when')} className="field-input" />
             </LabeledInput>
@@ -160,28 +176,18 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
                 const handleProps = getHandleProps(i)
                 return (
                   <div
-                    key={i}
+                    key={ex._key}
                     ref={(el) => { exerciseRefs.current[i] = el; setRowRef(i)(el) }}
-                    className="flex items-stretch gap-1.5"
                     style={{ opacity: dragIndex === i ? 0.5 : 1 }}
                   >
-                    <span
-                      {...handleProps}
-                      aria-label="Drag to reorder"
-                      className="flex items-center justify-center px-1 shrink-0 select-none"
-                      style={{ ...handleProps.style, color: 'var(--color-secondary)' }}
-                    >
-                      ⠿
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <ExerciseRow
-                        exercise={ex}
-                        history={history}
-                        showRemove={form.exercises.length > 1}
-                        onChange={(field, val) => updateExercise(i, field, val)}
-                        onRemove={() => removeExercise(i)}
-                      />
-                    </div>
+                    <ExerciseRow
+                      exercise={ex}
+                      history={history}
+                      showRemove={form.exercises.length > 1}
+                      onChange={(field, val) => updateExercise(i, field, val)}
+                      onRemove={() => removeExercise(i)}
+                      dragHandleProps={handleProps}
+                    />
                   </div>
                 )
               })}
