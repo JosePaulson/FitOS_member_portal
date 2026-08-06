@@ -753,7 +753,7 @@ export default function Profile() {
         <h2 className="mb-1 text-sm font-bold" style={{ color: S.primary }}>About</h2>
         {[
           { label: 'App', value: 'FitOS Member Portal' },
-          { label: 'Version', value: '1.5.2' },
+          { label: 'Version', value: APP_VERSION },
           { label: 'Gym ID', value: gym?.subdomain || '—' },
         ].map(({ label, value }) => (
           <div key={label} className="flex justify-between text-sm">
@@ -785,8 +785,6 @@ export default function Profile() {
         onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(248,113,113,0.05)'}>
         {logoutBusy ? 'Signing out…' : 'Sign out'}
       </button>
-
-      <p className="text-center text-[11px] pt-1" style={{ color: S.secondary }}>Version {APP_VERSION}</p>
 
       <div className="h-2" />
 

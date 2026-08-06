@@ -70,13 +70,25 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
     setForm((v) => ({ ...v, exercises: [...v.exercises, withKey({ name: '', sets: '', reps: '', weight: '', muscleGroup: '' })] }))
   }
 
+  const { list: orderedExercises, dragIndex, getHandleProps, setRowRef } = useDragReorder(
+    form.exercises,
+    (reordered) => setForm((v) => ({ ...v, exercises: reordered }))
+  )
+
+  // Scrolls the newly-added row into view. Keyed off orderedExercises.length
+  // (what's actually rendered) rather than form.exercises.length: useDragReorder
+  // keeps its own internal copy of the list and only resyncs it from
+  // form.exercises one render *after* form.exercises changes, so a new row
+  // doesn't actually exist in the DOM yet on the render where
+  // form.exercises.length first ticks up — this effect would fire a render
+  // too early and find nothing in exerciseRefs to scroll to.
   useEffect(() => {
     if (scrollToIndex == null) return
     const el = exerciseRefs.current[scrollToIndex]
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     setScrollToIndex(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scrollToIndex, form.exercises.length])
+  }, [scrollToIndex, orderedExercises.length])
 
   function updateExercise(i, field, val) {
     setForm((v) => {
@@ -88,11 +100,6 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
   function removeExercise(i) {
     setForm((v) => ({ ...v, exercises: v.exercises.filter((_, idx) => idx !== i) }))
   }
-
-  const { list: orderedExercises, dragIndex, getHandleProps, setRowRef } = useDragReorder(
-    form.exercises,
-    (reordered) => setForm((v) => ({ ...v, exercises: reordered }))
-  )
 
   const [showCopyModal, setShowCopyModal] = useState(false)
   function copyExercises(copied) {
