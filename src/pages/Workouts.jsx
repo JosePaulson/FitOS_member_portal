@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useRef } from 'react'
 import { portalApi } from '../api/index'
 import Spinner, { EmptyState, Badge } from '../components/ui/Spinner'
 import FoodScannerModal from '../components/FoodScanner'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import RecentScans from '../components/RecentScans'
 import { WorkoutLogFormModal, WorkoutLogDetail } from '../components/WorkoutLogForm'
 import WeightCaloriesChart from '../components/WeightCaloriesChart'
@@ -25,7 +25,15 @@ const LOG_FILTERS = [
 ]
 
 export default function Workouts() {
-  const [tab, setTab] = useState(0)
+  // Members with an active PT plan land on the PT Sessions tab by default
+  // (it's the most relevant view for them) — seeded synchronously from
+  // whatever's cached from a previous visit to avoid a flash of the
+  // Workout tab, then confirmed/corrected by a fresh fetch just below.
+  const [tab, setTab] = useState(() => {
+    const cached = readCache('pt:sessions')
+    const hasActivePlan = (cached?.ptPlans || []).some((p) => p.status === 'active')
+    return hasActivePlan ? 2 : 0
+  })
   const [pendingSessionId, setPendingSessionId] = useState(null)
   const [pendingLogId, setPendingLogId] = useState(null)
   const [autoOpenScanner, setAutoOpenScanner] = useState(false)
@@ -46,6 +54,25 @@ export default function Workouts() {
     if (state?.openLogId) setPendingLogId(state.openLogId)
     if (state?.openScanner) setAutoOpenScanner(true)
   }, [state])
+
+  // Confirms (or corrects) the cache-seeded default tab above with a fresh
+  // check — covers a first-ever visit with no cache yet, or a plan that's
+  // become active since the cache was written. Only ever flips the
+  // *default* Workout tab over to PT Sessions; never overrides an explicit
+  // deep link, and never yanks the member off a tab they've already
+  // picked themselves.
+  useEffect(() => {
+    if (state?.tab !== undefined) return
+    let cancelled = false
+    portalApi.ptPlans().then(({ data }) => {
+      if (cancelled) return
+      const hasActivePlan = (data.plans || []).some((p) => p.status === 'active')
+      if (hasActivePlan) setTab((current) => (current === 0 ? 2 : current))
+    }).catch(() => { /* not worth surfacing — worst case it just stays on Workout */ })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
     <div className="flex flex-col gap-5 px-5 py-6">
       <h1 className="text-xl font-bold tracking-tight" style={{ color: 'var(--color-primary)' }}>My programmes</h1>
@@ -652,6 +679,7 @@ function NoPTPlanCard({ catalog }) {
 }
 
 function PTTab({ initialSessionId, onConsumedInitialSession }) {
+  const navigate = useNavigate()
   const { muscleGroups } = useExerciseCatalog()
   const cached = readCache('pt:sessions')
   const [sessions, setSessions] = useState(cached?.sessions ?? [])
@@ -678,6 +706,11 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
   // PR lookups match what's shown on the Workout tab for the same
   // exercise.
   const prHistory = useMemo(() => [...sessions, ...prHistoryLogs], [sessions, prHistoryLogs])
+  // Separate first/last checkpoints per metric — a reading might log only
+  // one of the two, so "start"/"latest" for weight and for calories can
+  // legitimately point at different sessions.
+  const weightPoints = useMemo(() => progress.filter((p) => p.bodyWeight != null), [progress])
+  const caloriePoints = useMemo(() => progress.filter((p) => p.caloriesBurned != null), [progress])
 
   async function load() {
     try {
@@ -1092,6 +1125,11 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
         style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
         📅 Book a PT session
       </button>
+      <button onClick={() => navigate('/timetable')}
+        className="w-full font-semibold py-3 rounded-xl text-sm transition-all"
+        style={{ background: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-primary)' }}>
+        🗓️ View weekly timetable
+      </button>
       {showBooking && (
         <BookingModal onClose={() => setShowBooking(false)} onBooked={() => { setShowBooking(false); load() }} />
       )}
@@ -1108,6 +1146,11 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
         className="w-full font-bold py-3.5 rounded-xl text-sm transition-all"
         style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
         📅 Book a PT session
+      </button>
+      <button onClick={() => navigate('/timetable')}
+        className="w-full font-semibold py-3 rounded-xl text-sm transition-all"
+        style={{ background: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-primary)' }}>
+        🗓️ View weekly timetable
       </button>
       {showBooking && (
         <BookingModal onClose={() => setShowBooking(false)} onBooked={() => { setShowBooking(false); load() }} />
@@ -1130,27 +1173,41 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
         ))}
       </div>
 
-      {/* Body weight progress — only the start and most recent readings are
-          called out as real numbers; the wave in between is decorative
-          (not plotted from the actual in-between readings), since with
-          many entries a literal bar-per-reading chart got noisy and hard
-          to read at a glance. */}
+      {/* Body weight & calories progress — a real smoothed curve through
+          every reading (not decorative), with only the first/last values
+          called out as text underneath rather than labeling every point. */}
       {progress.length > 1 && (
         <div className="p-4 card">
           <h3 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>
-            Body weight progress
+            Body weight & calories progress
           </h3>
-          <div className="h-14">
-            <SineWave height={56} />
-          </div>
-          <div className="flex justify-between mt-2 text-xs" style={{ color: 'var(--color-secondary)' }}>
-            <span>Start: {progress[0].bodyWeight} kg</span>
-            <span style={{ color: progress.at(-1).bodyWeight < progress[0].bodyWeight ? 'var(--color-accent)' : '#f87171', fontWeight: 600 }}>
-              {progress.at(-1).bodyWeight < progress[0].bodyWeight ? '↓' : '↑'}{' '}
-              {Math.abs(progress.at(-1).bodyWeight - progress[0].bodyWeight).toFixed(1)} kg
-            </span>
-            <span>Latest: {progress.at(-1).bodyWeight} kg</span>
-          </div>
+          <WeightCaloriesChart
+            points={progress}
+            curved
+            showNodes={false}
+            footer={false}
+            emptyMessage="Not enough data yet"
+          />
+          {weightPoints.length > 1 && (
+            <div className="flex justify-between mt-2 text-xs" style={{ color: 'var(--color-secondary)' }}>
+              <span>Start: {weightPoints[0].bodyWeight} kg</span>
+              <span style={{ color: weightPoints.at(-1).bodyWeight < weightPoints[0].bodyWeight ? 'var(--color-accent)' : '#f87171', fontWeight: 600 }}>
+                {weightPoints.at(-1).bodyWeight < weightPoints[0].bodyWeight ? '↓' : '↑'}{' '}
+                {Math.abs(weightPoints.at(-1).bodyWeight - weightPoints[0].bodyWeight).toFixed(1)} kg
+              </span>
+              <span>Latest: {weightPoints.at(-1).bodyWeight} kg</span>
+            </div>
+          )}
+          {caloriePoints.length > 1 && (
+            <div className="flex justify-between mt-1.5 text-xs" style={{ color: 'var(--color-secondary)' }}>
+              <span>Start: {caloriePoints[0].caloriesBurned} kcal</span>
+              <span style={{ color: '#c2410c', fontWeight: 600 }}>
+                {caloriePoints.at(-1).caloriesBurned >= caloriePoints[0].caloriesBurned ? '↑' : '↓'}{' '}
+                {Math.abs(caloriePoints.at(-1).caloriesBurned - caloriePoints[0].caloriesBurned)} kcal
+              </span>
+              <span>Latest: {caloriePoints.at(-1).caloriesBurned} kcal</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -1467,29 +1524,4 @@ function BookingModal({ onClose, onBooked }) {
     </div>
   )
 }
-/**
- * Purely decorative animated-looking sine wave used in place of a literal
- * per-reading bar chart for body weight progress — the real numbers (start
- * vs. most recent) are called out separately as text, so this doesn't need
- * to encode exact data points, just read as "a trend."
- */
-function SineWave({ height = 56 }) {
-  const width = 300
-  const midY = height / 2
-  const amplitude = height * 0.32
-  const cycles = 2.5
 
-  let d = `M 0 ${midY}`
-  const steps = 60
-  for (let i = 1; i <= steps; i++) {
-    const x = (width / steps) * i
-    const y = midY - Math.sin((i / steps) * cycles * Math.PI * 2) * amplitude
-    d += ` L ${x.toFixed(1)} ${y.toFixed(1)}`
-  }
-
-  return (
-    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="w-full h-full">
-      <path d={d} fill="none" stroke="var(--color-accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.55" />
-    </svg>
-  )
-}

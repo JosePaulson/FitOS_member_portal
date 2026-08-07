@@ -7,4 +7,4 @@
 //   - Small changes                 → bump MINOR (middle number)
 //   - Minor updates / small fixes   → bump PATCH (last number)
 //   - Major updates / big overhauls → bump MAJOR (first number)
-export const APP_VERSION = '1.7.5'
+export const APP_VERSION = '1.7.6'

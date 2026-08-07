@@ -78,6 +78,14 @@ export const portalApi = {
   deleteFoodScan: (id) => api.delete(`/member-portal/food-scan/${id}`),
 }
 
+/* ── Weekly PT timetable (member — view + request/cancel own slots) ───────── */
+export const timetableApi = {
+  list: () => api.get('/member-portal/timetable'),
+  request: (id, memberPTPlanId) => api.post(`/member-portal/timetable/${id}/request`, { memberPTPlanId }),
+  cancelRequest: (id) => api.post(`/member-portal/timetable/${id}/cancel-request`),
+  empty: (id) => api.post(`/member-portal/timetable/${id}/empty`),
+}
+
 export const chatApi = {
   send: (messages) => api.post('/member-portal/chat', { messages }),
   suggestions: () => api.get('/member-portal/chat/suggestions'),

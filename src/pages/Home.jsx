@@ -63,9 +63,24 @@ export default function Home() {
   const days = daysUntil(member.membershipExpiryDate)
   const [badgeColor, badgeLabel] = membershipBadge(member.membershipStatus)
   const expiryWarning = member.membershipStatus === 'active' && days !== null && days <= 10
-  const totalCheckins = summary?.attendance?.reduce((s, m) => s + m.count, 0) ?? 0
   const ptTotal = summary?.pt?.totalCompleted ?? 0
   const ptRemaining = summary?.pt?.totalScheduled ?? 0
+
+  // "Check-ins" on the home screen is this CALENDAR month only (not
+  // lifetime) — attendanceSummary() already groups by month, so just pick
+  // out the current one; PT completions for the month come from filtering
+  // the session list client-side, since the /pt-sessions totals are
+  // always all-time. Kept separate from `ptTotal` above, which other
+  // stat cards further down still use as an all-time figure.
+  const now = new Date()
+  const totalCheckinsThisMonth = (summary?.attendance || []).find(
+    (m) => m._id.year === now.getFullYear() && m._id.month === now.getMonth() + 1
+  )?.count ?? 0
+  const ptCompletedThisMonth = (summary?.pt?.sessions || []).filter((s) => {
+    if (s.status !== 'completed') return false
+    const d = new Date(s.date)
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+  }).length
 
   return (
     <div className="flex flex-col gap-6 px-5 py-6 animate-fade-up">
@@ -123,7 +138,7 @@ export default function Home() {
         : (
           <div className="grid grid-cols-3 gap-3">
             <Link to="/profile#attendance" preventScrollReset={true}>
-              <StatCard icon="📅" label="Check-ins" value={totalCheckins + ptTotal} sub="all time" />
+              <StatCard icon="📅" label="Check-ins" value={totalCheckinsThisMonth + ptCompletedThisMonth} sub="this month" />
             </Link>
             <StatCard icon="💪" label="PT sessions" value={ptTotal} sub="completed" />
             {ptRemaining !== null

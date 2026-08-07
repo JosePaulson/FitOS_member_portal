@@ -10,6 +10,7 @@ import Home     from './pages/Home'
 import Plans    from './pages/Plans'
 import Billing  from './pages/Billing'
 import Workouts from './pages/Workouts'
+import Timetable from './pages/Timetable'
 import Profile  from './pages/Profile'
 import BMI      from './pages/BMI'
 import Chat     from './pages/Chat'
@@ -56,6 +57,7 @@ export default function App() {
           <Route path="plans"       element={<Plans />}    />
           <Route path="billing"     element={<Billing />}  />
           <Route path="workouts"    element={<Workouts />} />
+          <Route path="timetable"   element={<Timetable />} />
           <Route path="profile"     element={<Profile />}  />
           <Route path="bmi"         element={<BMI />}      />
           <Route path="chat"        element={<Chat />}     />

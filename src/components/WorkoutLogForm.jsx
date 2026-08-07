@@ -75,19 +75,22 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
     (reordered) => setForm((v) => ({ ...v, exercises: reordered }))
   )
 
-  // Scrolls the newly-added row into view. Keyed off orderedExercises.length
-  // (what's actually rendered) rather than form.exercises.length: useDragReorder
-  // keeps its own internal copy of the list and only resyncs it from
-  // form.exercises one render *after* form.exercises changes, so a new row
-  // doesn't actually exist in the DOM yet on the render where
-  // form.exercises.length first ticks up — this effect would fire a render
-  // too early and find nothing in exerciseRefs to scroll to.
+  // Scrolls the newly-added row into view. Waits for it to actually exist
+  // before clearing scrollToIndex: useDragReorder keeps its own internal
+  // copy of the list and only resyncs it from form.exercises one render
+  // *after* form.exercises changes, so this effect's first firing (right
+  // when scrollToIndex is set) usually lands on a render where the new row
+  // isn't in orderedExercises yet — exerciseRefs won't have it. Rather than
+  // give up on that first miss, keep scrollToIndex set so this reruns (it's
+  // also keyed off orderedExercises.length) on the very next render, once
+  // the row genuinely exists to scroll to.
   useEffect(() => {
     if (scrollToIndex == null) return
     const el = exerciseRefs.current[scrollToIndex]
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    setScrollToIndex(null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setScrollToIndex(null)
+    }
   }, [scrollToIndex, orderedExercises.length])
 
   function updateExercise(i, field, val) {

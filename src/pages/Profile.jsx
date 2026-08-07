@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMemberAuth } from '../context/MemberAuthContext'
 import { useThemeContext } from '../context/ThemeContext'
-import { portalApi, authApi } from '../api/index'
+import { portalApi, authApi, timetableApi } from '../api/index'
 import Spinner, { Badge, membershipBadge, ThemeToggle } from '../components/ui/Spinner'
 import { useInstallPrompt } from '../context/InstallPromptContext'
 import IOSInstallSheet from '../components/IOSInstallSheet'
@@ -21,6 +21,29 @@ import { APP_VERSION } from '../version'
 function localDateKey(d) {
   const dt = new Date(d)
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+}
+
+// Trainer-scheduled sessions historically only carry a date (midnight);
+// member bookings always carry a real time — same convention as Workouts.jsx.
+function hasTimeComponent(d) {
+  const dt = new Date(d)
+  return dt.getHours() !== 0 || dt.getMinutes() !== 0
+}
+function formatTime(d) {
+  return new Date(d).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })
+}
+
+// JS Date#getDay() order (0=Sunday), for looking up a calendar date's
+// weekday against the Timetable feature's weekday keys.
+const WEEKDAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+
+// A Timetable slot's startTime is a plain "HH:mm" string, not a Date —
+// format it the same lowercase am/pm way as formatTime() above.
+function formatHHMM(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number)
+  const period = h < 12 ? 'am' : 'pm'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`
 }
 
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -50,6 +73,27 @@ export default function Profile() {
     return cached ? new Map(cached.logEntries || []) : new Map()
   })
   const [loading, setLoading] = useState(() => readCache(`profile:attendance:${viewMonth}`) === null)
+
+  // Member's own recurring weekly Timetable bookings (not month-scoped —
+  // fetched once), keyed by weekday, used to show upcoming standing PT
+  // slots on the calendar for dates that don't already have an actual
+  // dated PT session recorded. Silently empty if the member has no active
+  // PT plan (the endpoint 403s) or is offline — this is a supplementary
+  // overlay, not core to the page.
+  const [ownWeeklySlots, setOwnWeeklySlots] = useState(() => new Map())
+  useEffect(() => {
+    timetableApi.list()
+      .then(({ data }) => {
+        const map = new Map()
+        for (const s of data.slots || []) {
+          if (!s.member?.isMine) continue
+          const existing = map.get(s.weekday)
+          if (!existing || s.startTime < existing.startTime) map.set(s.weekday, s)
+        }
+        setOwnWeeklySlots(map)
+      })
+      .catch(() => { /* no active PT plan, or offline — skip the overlay */ })
+  }, [])
 
   const [showPin, setShowPin] = useState(false)
   const [pinForm, setPinForm] = useState({ currentPin: '', newPin: '', confirmPin: '' })
@@ -246,6 +290,25 @@ export default function Profile() {
   const firstDay = new Date(calYear, calMonth - 1, 1).getDay()
   const daysInMonth = new Date(calYear, calMonth, 0).getDate()
   const today = localDateKey(new Date())
+
+  // The weekly Timetable overlay only covers what the Timetable page
+  // itself can actually show — this week and next week — not the rest of
+  // the month, since anything further out isn't reachable there yet.
+  const todayDate = new Date()
+  todayDate.setHours(0, 0, 0, 0)
+  const todayDow = (todayDate.getDay() + 6) % 7 // Monday=0..Sunday=6
+  const mondayThisWeek = new Date(todayDate)
+  mondayThisWeek.setDate(todayDate.getDate() - todayDow)
+  const nextWeekSunday = new Date(mondayThisWeek)
+  nextWeekSunday.setDate(mondayThisWeek.getDate() + 13) // Mon this week + 13 = Sun next week
+  const weeklyOverlayEndKey = localDateKey(nextWeekSunday)
+
+  // 0 if a date falls in the current Mon–Sun week, 1 if in next week —
+  // matches the Timetable page's own this-week/next-week toggle exactly.
+  function weekOffsetForDate(d) {
+    const diffDays = Math.round((d - mondayThisWeek) / 86400000)
+    return diffDays >= 7 ? 1 : 0
+  }
 
   // A day with a plain check-in, a PT session, and/or a self-logged
   // workout should count as ONE check-in, not several — union all three
@@ -485,8 +548,27 @@ export default function Profile() {
                 if (!!a.bodyWeight !== !!b.bodyWeight) return a.bodyWeight ? -1 : 1
                 return 0
               })[0]
-              const ptSessionStatus = ptSession?.status
               const hasPT = !!ptSession
+              const ptSessionStatus = ptSession?.status
+              const isFuturePT = hasPT && ptSessionStatus === 'scheduled'
+              // Only show the booked time for a still-upcoming (scheduled)
+              // session — once it's completed the time's no longer the
+              // useful bit of info, so it drops back to just the badge.
+              const ptTime = isFuturePT && hasTimeComponent(ptSession.date)
+                ? formatTime(ptSession.date)
+                : null
+
+              // A standing weekly Timetable booking for this date's weekday
+              // — only surfaced when there's no actual dated PT session
+              // already recorded for this date (that always wins), the
+              // date hasn't already passed, and it's within the two weeks
+              // the Timetable page itself can show (this week + next week).
+              const cellDate = new Date(calYear, calMonth - 1, day)
+              const weeklySlot = !hasPT && dateStr >= today && dateStr <= weeklyOverlayEndKey
+                ? ownWeeklySlots.get(WEEKDAY_KEYS[cellDate.getDay()])
+                : null
+              const hasWeeklySlot = !!weeklySlot
+
               const extraPTCount = Math.max(ptSessionsToday.length - 1, 0)
               const workoutLog = workoutLogsByDate.get(dateStr)
               const hasLog = !!workoutLog
@@ -494,12 +576,17 @@ export default function Profile() {
 
               // A day can have both a PT session and a self-logged workout —
               // clicking goes to whichever is more specific (PT first, since
-              // that's an appointment; falls back to the log otherwise).
+              // that's an appointment; falls back to the log otherwise). A
+              // weekly-only slot deep-links straight to that exact day
+              // (and the right this-week/next-week view) on the Timetable
+              // page, rather than just landing on today's default.
               const goTo = hasPT
                 ? () => navigate('/workouts', { state: { tab: 2, sessionId: ptSession._id } })
                 : hasLog
                   ? () => navigate('/workouts', { state: { tab: 0, openLogId: workoutLog._id } })
-                  : undefined
+                  : hasWeeklySlot
+                    ? () => navigate('/timetable', { state: { weekday: weeklySlot.weekday, weekOffset: weekOffsetForDate(cellDate) } })
+                    : undefined
 
               return (
                 <div key={day}
@@ -510,26 +597,37 @@ export default function Profile() {
                   className="relative aspect-square flex flex-col items-center justify-center gap-0.5 rounded-lg text-xs font-medium transition-all"
                   style={{
                     cursor: goTo ? 'pointer' : 'default',
-                    // Priority when a day has multiple things going on: PT
-                    // session styling (purple = completed, amber =
-                    // scheduled) wins over everything; a plain attendance
-                    // check-in or a self-logged workout (no PT) both get the
-                    // same default lime fill used for attendance.
+                    // Completed PT fills solid purple; a still-upcoming
+                    // (scheduled) PT, or a standing weekly Timetable slot
+                    // with no dated session yet, is an outline only — amber
+                    // border, no fill — so it reads as "coming up" rather
+                    // than "done". Plain attendance/self-logged days keep
+                    // the default solid lime fill.
                     background: hasPT
-                      ? (ptSessionStatus === 'completed' ? '#9333ea66' : '#92400eaa')
-                      : (attended || hasLog) ? S.accent : 'transparent',
-                    color: hasPT ? '#fafafa'
-                      : (attended || hasLog) ? '#0D0D0D'
-                        : isToday ? S.accent
-                          : S.hint,
-                    border: hasPT ? '1px solid #9333ea55'
-                      : (attended || hasLog) ? '1px solid transparent'
-                        : isToday ? `1px solid ${S.accent}`
-                          : '1px solid transparent',
-                    fontWeight: (hasPT || attended || hasLog) ? 700 : 400,
+                      ? (ptSessionStatus === 'completed' ? '#9333ea66' : 'transparent')
+                      : hasWeeklySlot ? 'transparent'
+                        : (attended || hasLog) ? S.accent : 'transparent',
+                    color: hasPT
+                      ? (ptSessionStatus === 'completed' ? '#fafafa' : '#f59e0b')
+                      : hasWeeklySlot ? '#f59e0b'
+                        : (attended || hasLog) ? '#0D0D0D'
+                          : isToday ? S.accent
+                            : S.hint,
+                    border: hasPT
+                      ? (ptSessionStatus === 'completed' ? '1px solid #9333ea55' : '1px solid #f59e0b')
+                      : hasWeeklySlot ? '1px solid #f59e0b'
+                        : (attended || hasLog) ? '1px solid transparent'
+                          : isToday ? `1px solid ${S.accent}`
+                            : '1px solid transparent',
+                    fontWeight: (hasPT || hasWeeklySlot || attended || hasLog) ? 700 : 400,
                   }}>
                   <span className="leading-none">{day}</span>
-                  {ptSession?.bodyWeight && (
+                  {(ptTime || hasWeeklySlot) && (
+                    <span className="text-[7px] leading-none font-semibold" style={{ color: '#f59e0b' }}>
+                      {ptTime || formatHHMM(weeklySlot.startTime)}
+                    </span>
+                  )}
+                  {hasPT && ptSessionStatus === 'completed' && ptSession?.bodyWeight && (
                     <span className="text-[6.5px] leading-none font-semibold"
                       style={{ color: '#fafafa' }}>
                       {ptSession.bodyWeight.toFixed(1)}
@@ -541,9 +639,10 @@ export default function Profile() {
                       {Number(workoutLog.bodyWeight).toFixed(1)}
                     </span>
                   )}
-                  {hasPT && (
+                  {(hasPT || hasWeeklySlot) && (
                     <span
-                      className="absolute -top-0 -right-0 w-3.5 h-3.5 rounded-bl-full rounded-tr-[10px] flex items-center justify-center text-[5.5px] font-bold leading-none text-[#fafafa]"
+                      className="absolute -top-0 -right-0 w-3.5 h-3.5 rounded-bl-full rounded-tr-[10px] flex items-center justify-center text-[5.5px] font-bold leading-none"
+                      style={{ color: hasPT && ptSessionStatus === 'completed' ? '#fafafa' : '#f59e0b' }}
                       title={extraPTCount > 0 ? `${ptSessionsToday.length} PT sessions` : 'PT session'}
                     >
                       {extraPTCount > 0 ? `${ptSessionsToday.length}×` : 'PT'}
@@ -569,7 +668,7 @@ export default function Profile() {
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#9333ea66' }} /> Completed PT
           </span>
           <span className="flex items-center gap-1.5 text-[10px]" style={{ color: S.secondary }}>
-            <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#92400eaa', border: '1px solid #92400eaa' }} /> Scheduled PT
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: 'transparent', border: '1px solid #f59e0b' }} /> Scheduled PT
           </span>
         </div>
       </div>
