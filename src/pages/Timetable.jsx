@@ -4,14 +4,41 @@ import { timetableApi } from '../api/index'
 import Spinner, { EmptyState, Badge } from '../components/ui/Spinner'
 
 const WEEKDAYS = [
-  { key: 'monday', label: 'Mon' },
-  { key: 'tuesday', label: 'Tue' },
-  { key: 'wednesday', label: 'Wed' },
-  { key: 'thursday', label: 'Thu' },
-  { key: 'friday', label: 'Fri' },
-  { key: 'saturday', label: 'Sat' },
-  { key: 'sunday', label: 'Sun' },
+  { key: 'monday', label: 'Mon', idx: 0 },
+  { key: 'tuesday', label: 'Tue', idx: 1 },
+  { key: 'wednesday', label: 'Wed', idx: 2 },
+  { key: 'thursday', label: 'Thu', idx: 3 },
+  { key: 'friday', label: 'Fri', idx: 4 },
+  { key: 'saturday', label: 'Sat', idx: 5 },
+  { key: 'sunday', label: 'Sun', idx: 6 },
 ]
+
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// Manual format (not toLocaleDateString) so it's always exactly "Aug 8"
+// regardless of the browser's locale settings.
+function formatShortDate(d) {
+  return `${MONTH_ABBR[d.getMonth()]} ${d.getDate()}`
+}
+
+// The Monday that starts "this week" (weekOffset 0) or "next week" (1).
+function mondayOfWeek(weekOffset) {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  const dow = (d.getDay() + 6) % 7 // Monday=0..Sunday=6
+  d.setDate(d.getDate() - dow + weekOffset * 7)
+  return d
+}
+
+// The actual calendar date a given weekday tab represents, in the
+// currently-viewed week — e.g. Saturday in "this week" is a real date
+// like Aug 8, shown under the tab label.
+function dateForWeekday(weekOffset, weekdayIdx) {
+  const monday = mondayOfWeek(weekOffset)
+  const d = new Date(monday)
+  d.setDate(monday.getDate() + weekdayIdx)
+  return d
+}
 
 function cap(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s
@@ -187,7 +214,11 @@ export default function Timetable() {
   }
 
   const dayOptions = useMemo(
-    () => visibleWeekdays(weekOffset).map((d) => ({ ...d, count: visibleSlotsFor(d.key).length })),
+    () => visibleWeekdays(weekOffset).map((d) => ({
+      ...d,
+      openCount: visibleSlotsFor(d.key).filter((s) => s.status === 'empty').length,
+      date: dateForWeekday(weekOffset, d.idx),
+    })),
     [slots, weekOffset]
   )
   const daySlots = useMemo(
@@ -241,13 +272,17 @@ export default function Timetable() {
       <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
         {dayOptions.map((d) => (
           <button key={d.key} onClick={() => setDay(d.key)}
-            className="text-xs px-3.5 py-1.5 rounded-full whitespace-nowrap transition-all shrink-0 font-semibold"
+            className="flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl whitespace-nowrap transition-all shrink-0"
             style={{
               background: day === d.key ? 'var(--color-accent)' : 'var(--color-surface-2)',
-              color: day === d.key ? '#0D0D0D' : 'var(--color-secondary)',
               border: '1px solid var(--color-border)',
             }}>
-            {d.label}{d.count > 0 ? ` · ${d.count}` : ''}
+            <span className="text-xs font-semibold" style={{ color: day === d.key ? '#0D0D0D' : 'var(--color-secondary)' }}>
+              {d.label}{d.openCount > 0 ? ` · ${d.openCount}` : ''}
+            </span>
+            <span className="text-[9px] leading-none" style={{ color: day === d.key ? '#0D0D0D' : 'var(--color-primary)' }}>
+              {formatShortDate(d.date)}
+            </span>
           </button>
         ))}
       </div>

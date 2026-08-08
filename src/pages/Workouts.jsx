@@ -293,6 +293,8 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
           {filteredWeightPoints.length > 0 ? (
             <WeightCaloriesChart
               points={filteredWeightPoints}
+              curved
+              showNodes={false}
               emptyMessage="Log a couple more workouts with weight or calories to see your trend here."
             />
           ) : (

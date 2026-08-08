@@ -5,11 +5,39 @@
  * line is normalized to its own min/max so two very different units
  * (kg vs minutes) can share one chart without one flattening the other.
  *
- * No per-node value labels — the two lines are identified purely by
- * color + the legend above the chart (matches the Weight/Calories chart
- * on the Workouts tab).
+ * Props mirror WeightCaloriesChart's: `curved` for a smooth Catmull-Rom
+ * wave through every real point instead of straight segments, `showNodes`
+ * to toggle the per-reading dots, `footer` to toggle the built-in
+ * first/last date row.
+ *
+ * No per-node value labels regardless of mode — the two lines are
+ * identified purely by color + the legend above the chart.
  */
-export default function StrengthEnduranceChart({ points, emptyMessage }) {
+function smoothPath(coords) {
+  if (coords.length < 2) return ''
+  if (coords.length === 2) {
+    return `M ${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)} L ${coords[1].x.toFixed(1)} ${coords[1].y.toFixed(1)}`
+  }
+  let d = `M ${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)} `
+  for (let i = 0; i < coords.length - 1; i++) {
+    const p0 = coords[i === 0 ? i : i - 1]
+    const p1 = coords[i]
+    const p2 = coords[i + 1]
+    const p3 = coords[i + 2 < coords.length ? i + 2 : i + 1]
+    const cp1x = p1.x + (p2.x - p0.x) / 6
+    const cp1y = p1.y + (p2.y - p0.y) / 6
+    const cp2x = p2.x - (p3.x - p1.x) / 6
+    const cp2y = p2.y - (p3.y - p1.y) / 6
+    d += `C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)} `
+  }
+  return d.trim()
+}
+
+function straightPath(coords) {
+  return coords.map((c, i) => `${i === 0 ? 'M' : 'L'} ${c.x.toFixed(1)} ${c.y.toFixed(1)}`).join(' ')
+}
+
+export default function StrengthEnduranceChart({ points, emptyMessage, curved = false, showNodes = true, footer = true }) {
   const sorted = [...points]
     .filter((p) => p.strength != null || p.endurance != null)
     .sort((a, b) => new Date(a.date) - new Date(b.date))
@@ -46,7 +74,7 @@ export default function StrengthEnduranceChart({ points, emptyMessage }) {
       })
       .filter(Boolean)
 
-    const path = coords.map((c, i) => `${i === 0 ? 'M' : 'L'} ${c.x.toFixed(1)} ${c.y.toFixed(1)}`).join(' ')
+    const path = curved ? smoothPath(coords) : straightPath(coords)
     return { coords, path }
   }
 
@@ -58,7 +86,7 @@ export default function StrengthEnduranceChart({ points, emptyMessage }) {
 
   return (
     <div>
-      {/* Legend — the only place either line is named; nodes stay unlabeled */}
+      {/* Legend — the only place either line is named; nodes (when shown) stay unlabeled */}
       <div className="flex items-center gap-4 mb-2">
         {strengthLine && (
           <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--color-primary)' }}>
@@ -82,22 +110,24 @@ export default function StrengthEnduranceChart({ points, emptyMessage }) {
           <path d={enduranceLine.path} fill="none" stroke="#a855f7" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="4 3" />
         )}
 
-        {strengthLine?.coords.map((c, i) => (
+        {showNodes && strengthLine?.coords.map((c, i) => (
           <circle key={`s-${i}`} cx={c.x} cy={c.y} r={i === strengthLine.coords.length - 1 ? 3.5 : 2}
             fill={i === strengthLine.coords.length - 1 ? 'var(--color-accent)' : 'var(--color-surface)'}
             stroke="var(--color-accent)" strokeWidth="1.5" />
         ))}
-        {enduranceLine?.coords.map((c, i) => (
+        {showNodes && enduranceLine?.coords.map((c, i) => (
           <circle key={`e-${i}`} cx={c.x} cy={c.y} r={i === enduranceLine.coords.length - 1 ? 3.5 : 2}
             fill={i === enduranceLine.coords.length - 1 ? '#a855f7' : 'var(--color-surface)'}
             stroke="#a855f7" strokeWidth="1.5" />
         ))}
       </svg>
 
-      <div className="flex justify-between mt-1 text-[10px]" style={{ color: 'var(--color-secondary)' }}>
-        <span>{new Date(first.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
-        <span>{new Date(last.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
-      </div>
+      {footer && (
+        <div className="flex justify-between mt-1 text-[10px]" style={{ color: 'var(--color-secondary)' }}>
+          <span>{new Date(first.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+          <span>{new Date(last.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+        </div>
+      )}
     </div>
   )
 }

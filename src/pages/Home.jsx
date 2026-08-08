@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMemberAuth } from '../context/MemberAuthContext'
-import { portalApi } from '../api/index'
+import { portalApi, timetableApi } from '../api/index'
 import Spinner, { Badge, membershipBadge } from '../components/ui/Spinner'
 import StrengthEnduranceChart from '../components/StrengthEnduranceChart'
 import { readCache, writeCache } from '../lib/offline'
@@ -21,14 +21,43 @@ function avgWeightOf(exercises) {
   return +(weights.reduce((sum, w) => sum + w, 0) / weights.length).toFixed(1)
 }
 
+// Monday=0..Sunday=6, for comparing against a Timetable slot's weekday.
+const WEEKDAY_ORDER = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+
+// How many times the member's own recurring Timetable slots will actually
+// occur across "this week + next week" — the same two-week window the
+// Timetable page itself shows. A slot whose day/time this week has
+// already gone by only counts once (next week); one that's still ahead
+// counts twice (this week and next week both).
+function countUpcomingOccurrences(ownSlots) {
+  if (!ownSlots || ownSlots.length === 0) return 0
+  const now = new Date()
+  const todayIdx = (now.getDay() + 6) % 7
+  const nowHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+  let count = 0
+  for (const s of ownSlots) {
+    const slotIdx = WEEKDAY_ORDER.indexOf(s.weekday)
+    const stillUpcomingThisWeek = slotIdx > todayIdx || (slotIdx === todayIdx && s.startTime > nowHHMM)
+    count += stillUpcomingThisWeek ? 2 : 1
+  }
+  return count
+}
+
 export default function Home() {
   const { member, gym } = useMemberAuth()
   const [summary, setSummary] = useState(() => readCache('home:summary'))
   const [loading, setLoading] = useState(summary === null)
 
   function load() {
-    Promise.all([portalApi.attendanceSummary(), portalApi.ptSessions(), portalApi.workoutLogs({ limit: 100 })])
-      .then(([a, p, w]) => {
+    Promise.all([
+      portalApi.attendanceSummary(),
+      portalApi.ptSessions(),
+      portalApi.workoutLogs({ limit: 100 }),
+      // No active PT plan means this 403s — that's fine, just means no
+      // upcoming Timetable slots to count, not a load failure.
+      timetableApi.list().catch(() => ({ data: { slots: [] } })),
+    ])
+      .then(([a, p, w, t]) => {
         // Per-workout strength + endurance trend: each self-logged workout
         // and PT session contributes its own average lifted weight
         // ("strength", respective to that specific workout — not a single
@@ -42,7 +71,9 @@ export default function Home() {
           .sort((a2, b2) => new Date(b2.date) - new Date(a2.date))
           .slice(0, 12)
 
-        const next = { attendance: a.data, pt: p.data, strength }
+        const ownSlots = (t.data.slots || []).filter((s) => s.status === 'booked' && s.member?.isMine)
+
+        const next = { attendance: a.data, pt: p.data, strength, ownSlots }
         setSummary(next)
         writeCache('home:summary', next)
       })
@@ -65,6 +96,7 @@ export default function Home() {
   const expiryWarning = member.membershipStatus === 'active' && days !== null && days <= 10
   const ptTotal = summary?.pt?.totalCompleted ?? 0
   const ptRemaining = summary?.pt?.totalScheduled ?? 0
+  const ptScheduledNext2Weeks = countUpcomingOccurrences(summary?.ownSlots)
 
   // "Check-ins" on the home screen is this CALENDAR month only (not
   // lifetime) — attendanceSummary() already groups by month, so just pick
@@ -140,10 +172,12 @@ export default function Home() {
             <Link to="/profile#attendance" preventScrollReset={true}>
               <StatCard icon="📅" label="Check-ins" value={totalCheckinsThisMonth + ptCompletedThisMonth} sub="this month" />
             </Link>
-            <StatCard icon="💪" label="PT sessions" value={ptTotal} sub="completed" />
+            <Link to="/workouts" state={{ tab: 2 }}>
+              <StatCard icon="💪" label="PT sessions" value={ptCompletedThisMonth} sub="this month" />
+            </Link>
             {ptRemaining !== null
-              ? <Link to="/workouts" state={{ tab: 2 }}>
-                <StatCard icon="🎯" label="PT left" value={ptRemaining} sub="remaining" accent />
+              ? <Link to="/timetable">
+                <StatCard icon="🎯" label="PT sessions" value={ptScheduledNext2Weeks} sub="scheduled" accent />
               </Link>
               : <StatCard icon="🏅" label="Sessions" value={ptTotal} sub="total" />
             }
@@ -158,6 +192,8 @@ export default function Home() {
             <h2 className="mb-3 text-sm font-bold" style={{ color: 'var(--color-primary)' }}>💪 Strength progress</h2>
             <StrengthEnduranceChart
               points={summary.strength}
+              curved
+              showNodes={false}
               emptyMessage="Log a couple more workouts to see your strength and endurance trends here."
             />
           </div>
