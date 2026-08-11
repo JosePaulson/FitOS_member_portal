@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { resetAppCachesAndReload } from '../lib/recovery'
 
 const CHECK_INTERVAL_MS = 60000 // 1 minute
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
@@ -14,8 +15,10 @@ const API_BASE = import.meta.env.VITE_API_URL || '/api'
  *      GET /api/version and watching for it to change from what we first
  *      observed this session.
  * Either one means "the code running in this tab is stale" — the modal
- * blocks all interaction until the member taps Update, which clears every
- * cache this app could possibly be using and force-reloads.
+ * blocks all interaction until the member taps Update, which resets every
+ * cache this app could possibly be using (service worker, HTTP cache, and
+ * this app's own localStorage data cache — see lib/recovery.js) and
+ * force-reloads.
  */
 export default function UpdateChecker() {
   const [updateInfo, setUpdateInfo] = useState(null) // { version } | null
@@ -70,19 +73,7 @@ export default function UpdateChecker() {
 
   async function handleUpdate() {
     setUpdating(true)
-    try {
-      if ('serviceWorker' in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations()
-        await Promise.all(regs.map((r) => r.unregister()))
-      }
-      if ('caches' in window) {
-        const keys = await caches.keys()
-        await Promise.all(keys.map((k) => caches.delete(k)))
-      }
-    } catch { /* best-effort — reload below regardless */ }
-    // Cache-busting query param, in case anything still tries to serve a
-    // stale HTTP-cached response despite the clearing above.
-    window.location.href = window.location.pathname + '?_v=' + Date.now()
+    await resetAppCachesAndReload()
   }
 
   if (!updateInfo) return null

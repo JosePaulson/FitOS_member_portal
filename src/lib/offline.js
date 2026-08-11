@@ -25,6 +25,25 @@ export function writeCache(key, value) {
 }
 
 /**
+ * Removes every "last known good" entry this app has ever cached — used
+ * when picking up a new deploy, or recovering from a crash, since either
+ * one means whatever's cached might no longer match what the current code
+ * expects to find there. Deliberately narrow (only this app's own
+ * `fitos:cache:` entries) rather than a blanket localStorage.clear(), so
+ * it doesn't also sign the member out or reset unrelated preferences
+ * (theme, cookie consent) that have nothing to do with the problem.
+ */
+export function clearAppDataCache() {
+  try {
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith(PREFIX))
+      .forEach((k) => localStorage.removeItem(k))
+  } catch {
+    // localStorage unavailable — nothing to clear anyway
+  }
+}
+
+/**
  * True when a request failed because it never reached the server — offline,
  * DNS failure, timeout, dropped connection, service worker with no network
  * route, etc. False when the server actually responded (401, 404, 500...),

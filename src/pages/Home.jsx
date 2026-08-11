@@ -105,11 +105,13 @@ export default function Home() {
   // always all-time. Kept separate from `ptTotal` above, which other
   // stat cards further down still use as an all-time figure.
   const now = new Date()
-  const totalCheckinsThisMonth = (summary?.attendance || []).find(
-    (m) => m._id.year === now.getFullYear() && m._id.month === now.getMonth() + 1
+  const attendanceRows = Array.isArray(summary?.attendance) ? summary.attendance : []
+  const totalCheckinsThisMonth = attendanceRows.find(
+    (m) => m?._id?.year === now.getFullYear() && m?._id?.month === now.getMonth() + 1
   )?.count ?? 0
-  const ptCompletedThisMonth = (summary?.pt?.sessions || []).filter((s) => {
-    if (s.status !== 'completed') return false
+  const ptSessionRows = Array.isArray(summary?.pt?.sessions) ? summary.pt.sessions : []
+  const ptCompletedThisMonth = ptSessionRows.filter((s) => {
+    if (s?.status !== 'completed') return false
     const d = new Date(s.date)
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
   }).length
@@ -205,10 +207,11 @@ export default function Home() {
         {[
           { to: '/billing', icon: '🧾', label: 'Invoices' },
           { to: '/workouts', icon: '🏋️', label: 'Workouts' },
-          { to: '/equipment', icon: '🏋🏽‍♂️', label: 'Equipment' },
+          { to: '/equipment', icon: '🏋🏽‍♂️', label: 'Equipments' },
           { to: '/chat', icon: '💬', label: 'AI Coach' },
           { to: '/bmi', icon: '⚖️', label: 'BMI' },
           { to: '/plans', icon: '📋', label: 'Plans' },
+          { to: '/transformation', icon: '📸', label: 'Transformations' },
           { to: '/profile', icon: '👤', label: 'Profile' },
         ].map((l) => (
           <Link key={l.to} to={l.to}

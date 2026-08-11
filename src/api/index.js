@@ -86,6 +86,23 @@ export const timetableApi = {
   empty: (id) => api.post(`/member-portal/timetable/${id}/empty`),
 }
 
+/* ── My Transformation (member — progress photo gallery) ───────────────────── */
+export const transformationApi = {
+  list: () => api.get('/member-portal/transformation'),
+  add: ({ file, date, weight, note }) => {
+    const form = new FormData()
+    form.append('image', file)
+    form.append('date', date)
+    if (weight !== undefined && weight !== null && weight !== '') form.append('weight', weight)
+    if (note) form.append('note', note)
+    return api.post('/member-portal/transformation', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  update: (id, data) => api.patch(`/member-portal/transformation/${id}`, data),
+  remove: (id) => api.delete(`/member-portal/transformation/${id}`),
+}
+
 export const chatApi = {
   send: (messages) => api.post('/member-portal/chat', { messages }),
   suggestions: () => api.get('/member-portal/chat/suggestions'),

@@ -46,6 +46,19 @@ function formatHHMM(hhmm) {
   return `${h12}:${String(m).padStart(2, '0')} ${period}`
 }
 
+// Builds a Map from cached [key, value] pairs, tolerating anything
+// unexpected sitting in localStorage from an older app version (wrong
+// shape, corrupted, etc.) — the Map constructor throws on non-iterable
+// input, unlike most array methods, so this is the one spot in the
+// cache-hydration path most likely to crash the whole page on stale data.
+function safeMap(pairs) {
+  try {
+    return new Map(pairs)
+  } catch {
+    return new Map()
+  }
+}
+
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -62,15 +75,18 @@ export default function Profile() {
     const n = new Date()
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`
   })
-  const [attendance, setAttendance] = useState(() => readCache(`profile:attendance:${viewMonth}`)?.attendance ?? [])
+  const [attendance, setAttendance] = useState(() => {
+    const a = readCache(`profile:attendance:${viewMonth}`)?.attendance
+    return Array.isArray(a) ? a : []
+  })
   const [streak, setStreak] = useState(() => readCache(`profile:attendance:${viewMonth}`)?.streak ?? 0)
   const [ptSessionsByDate, setPtSessionsByDate] = useState(() => {
     const cached = readCache(`profile:attendance:${viewMonth}`)
-    return cached ? new Map(cached.ptEntries) : new Map()
+    return cached ? safeMap(cached.ptEntries) : new Map()
   })
   const [workoutLogsByDate, setWorkoutLogsByDate] = useState(() => {
     const cached = readCache(`profile:attendance:${viewMonth}`)
-    return cached ? new Map(cached.logEntries || []) : new Map()
+    return cached ? safeMap(cached.logEntries) : new Map()
   })
   const [loading, setLoading] = useState(() => readCache(`profile:attendance:${viewMonth}`) === null)
 
@@ -166,10 +182,10 @@ export default function Profile() {
     // Show whatever's cached for this month immediately (may be empty on
     // first-ever view of a month), then refresh from the server.
     const cached = readCache(`profile:attendance:${viewMonth}`)
-    setAttendance(cached?.attendance ?? [])
+    setAttendance(Array.isArray(cached?.attendance) ? cached.attendance : [])
     setStreak(cached?.streak ?? 0)
-    setPtSessionsByDate(cached ? new Map(cached.ptEntries) : new Map())
-    setWorkoutLogsByDate(cached ? new Map(cached.logEntries || []) : new Map())
+    setPtSessionsByDate(cached ? safeMap(cached.ptEntries) : new Map())
+    setWorkoutLogsByDate(cached ? safeMap(cached.logEntries) : new Map())
     setLoading(cached === null)
 
     function load() {
@@ -406,6 +422,17 @@ export default function Profile() {
         </div>
         <ThemeToggle isDark={isDark} onToggle={toggle} />
       </div>
+
+      {/* ── My transformations ── */}
+      <button onClick={() => navigate('/transformation')}
+        className="flex items-center gap-3 p-5 card text-left w-full">
+        <span className="text-2xl">📸</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold" style={{ color: S.primary }}>My transformations</p>
+          <p className="text-xs" style={{ color: S.secondary }}>Progress photos, tracked over time</p>
+        </div>
+        <span style={{ color: S.secondary }}>→</span>
+      </button>
 
       {/* ── Support & feedback ── */}
       <button
