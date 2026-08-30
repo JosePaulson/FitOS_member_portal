@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMemberAuth } from '../context/MemberAuthContext'
+import { isMemberActive } from '../lib/membership'
 import { portalApi } from '../api/index'
 
 function distanceMeters(lat1, lng1, lat2, lng2) {
@@ -58,7 +59,7 @@ async function showGeofenceNotification() {
  * happens.
  */
 export default function GeofenceAttendancePrompt() {
-  const { gym } = useMemberAuth()
+  const { gym, member } = useMemberAuth()
   const [visible, setVisible] = useState(false)
   const [status, setStatus] = useState('idle') // idle | submitting | success | error
   const [error, setError] = useState('')
@@ -66,6 +67,7 @@ export default function GeofenceAttendancePrompt() {
 
   useEffect(() => {
     if (hasChecked.current) return
+    if (!isMemberActive(member)) return // expired members don't get prompted to check in
     if (!gym?.location?.lat || !gym?.location?.lng) return
     hasChecked.current = true
 

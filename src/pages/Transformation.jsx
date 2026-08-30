@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { transformationApi } from '../api/index'
 import Spinner, { EmptyState } from '../components/ui/Spinner'
+import { useMemberAuth } from '../context/MemberAuthContext'
+import { isMemberActive } from '../lib/membership'
+import PremiumLocked from '../components/PremiumLocked'
 
 function formatDate(d) {
   return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -11,6 +14,8 @@ function todayInputValue() {
 }
 
 export default function Transformation() {
+  const { member } = useMemberAuth()
+  const memberActive = isMemberActive(member)
   const [photos, setPhotos] = useState(null) // null = loading
   const [error, setError] = useState('')
   const [addOpen, setAddOpen] = useState(false)
@@ -61,11 +66,15 @@ export default function Transformation() {
         </p>
       )}
 
-      <button onClick={() => setAddOpen(true)}
-        className="w-full font-bold py-3.5 rounded-xl text-sm transition-all"
-        style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
-        📸 Add a photo
-      </button>
+      {memberActive ? (
+        <button onClick={() => setAddOpen(true)}
+          className="w-full font-bold py-3.5 rounded-xl text-sm transition-all"
+          style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
+          📸 Add a photo
+        </button>
+      ) : (
+        <PremiumLocked compact />
+      )}
 
       {photos.length === 0 ? (
         <EmptyState icon="📸" title="No photos yet" sub="Add your first progress photo to start tracking your transformation." />

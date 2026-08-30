@@ -7,6 +7,7 @@ import Spinner, { Badge, membershipBadge, ThemeToggle } from '../components/ui/S
 import { useInstallPrompt } from '../context/InstallPromptContext'
 import IOSInstallSheet from '../components/IOSInstallSheet'
 import { useNotifications } from '../context/NotificationContext'
+import HydrationReminders from '../components/HydrationReminders'
 import { useAnchorScroll } from '../hooks/useAnchorScroll'
 import { readCache, writeCache } from '../lib/offline'
 import { istDayName } from '../lib/dateIST'
@@ -512,6 +513,9 @@ export default function Profile() {
           )}
         </div>
       )}
+
+      {/* ── Hydration reminders ── */}
+      <HydrationReminders />
 
       {/* ── Attendance calendar ── */}
       <div id="attendance" className="p-5 card">

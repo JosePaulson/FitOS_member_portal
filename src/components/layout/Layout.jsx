@@ -4,6 +4,7 @@ import { useInstallPrompt } from '../../context/InstallPromptContext'
 import InstallPrompt from '../InstallPrompt'
 import GeofenceAttendancePrompt from '../GeofenceAttendancePrompt'
 import RateLimitWarning from '../RateLimitWarning'
+import MembershipExpiredModal from '../MembershipExpiredModal'
 
 const TABS = [
   { to: '/', icon: '🏠', label: 'Home' },
@@ -62,6 +63,9 @@ export default function Layout() {
 
       {/* Global rate-limit warning — fires on any 429 anywhere in the app */}
       <RateLimitWarning />
+
+      {/* Membership-expired renewal reminder — once per app open */}
+      <MembershipExpiredModal />
 
       {/* Bottom tab bar — padded for the iOS home-indicator safe area */}
       <nav className="fixed bottom-0 z-40 grid w-full max-w-md grid-cols-5 -translate-x-1/2 left-1/2"

@@ -212,6 +212,7 @@ export default function Home() {
           { to: '/bmi', icon: '⚖️', label: 'BMI' },
           { to: '/plans', icon: '📋', label: 'Plans' },
           { to: '/transformation', icon: '📸', label: 'Transformations' },
+          { to: '/meal-log', icon: '🍽️', label: 'Meal Log' },
           { to: '/profile', icon: '👤', label: 'Profile' },
         ].map((l) => (
           <Link key={l.to} to={l.to}

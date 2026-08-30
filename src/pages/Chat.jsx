@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { chatApi } from '../api/index'
 import Spinner from '../components/ui/Spinner'
 import { useMemberAuth } from '../context/MemberAuthContext'
+import { isMemberActive } from '../lib/membership'
+import PremiumLocked from '../components/PremiumLocked'
 
 const STORAGE_KEY = 'fitos_chat_history'
 function loadHistory() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') } catch { return [] } }
@@ -86,6 +88,14 @@ export default function Chat() {
 	}
 
 	const showWelcome = messages.length === 0
+
+	if (!isMemberActive(member)) {
+		return (
+			<div className="flex flex-col items-center justify-center px-5" style={{ height: 'calc(100vh - 7rem)' }}>
+				<PremiumLocked />
+			</div>
+		)
+	}
 
 	return (
 		<div className="flex flex-col" style={{ height: 'calc(100vh - 7rem)' }}>

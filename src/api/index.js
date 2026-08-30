@@ -103,6 +103,23 @@ export const transformationApi = {
   remove: (id) => api.delete(`/member-portal/transformation/${id}`),
 }
 
+/* ── Meal Log (member — daily meal photo diary) ─────────────────────────── */
+export const mealLogApi = {
+  list: (params = {}) => api.get('/member-portal/meal-log', { params }),
+  add: ({ file, mealType, eatenAt, note }) => {
+    const form = new FormData()
+    form.append('image', file)
+    form.append('mealType', mealType)
+    form.append('eatenAt', eatenAt)
+    if (note) form.append('note', note)
+    return api.post('/member-portal/meal-log', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  update: (id, data) => api.patch(`/member-portal/meal-log/${id}`, data),
+  remove: (id) => api.delete(`/member-portal/meal-log/${id}`),
+}
+
 export const chatApi = {
   send: (messages) => api.post('/member-portal/chat', { messages }),
   suggestions: () => api.get('/member-portal/chat/suggestions'),

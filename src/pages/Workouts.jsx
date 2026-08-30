@@ -14,6 +14,9 @@ import ShareIcon from '../components/ShareIcon'
 import { useExerciseCatalog } from '../hooks/useExerciseCatalog'
 import { useBackableState } from '../hooks/useBackableState'
 import WorkoutVideoLibrary from '../components/WorkoutVideoLibrary'
+import { useMemberAuth } from '../context/MemberAuthContext'
+import { isMemberActive } from '../lib/membership'
+import PremiumLocked from '../components/PremiumLocked'
 
 const TABS = ['Workout', 'Diet', 'PT Sessions', 'Videos']
 
@@ -25,6 +28,9 @@ const LOG_FILTERS = [
 ]
 
 export default function Workouts() {
+  const { member } = useMemberAuth()
+  const memberActive = isMemberActive(member)
+
   // Members with an active PT plan land on the PT Sessions tab by default
   // (it's the most relevant view for them) — seeded synchronously from
   // whatever's cached from a previous visit to avoid a flash of the
@@ -103,12 +109,18 @@ export default function Workouts() {
           onConsumedInitialSession={() => setPendingSessionId(null)}
         />
       )}
-      {tab === 3 && <WorkoutVideoLibrary onClose={() => setTab(0)} />}
+      {tab === 3 && (
+        memberActive
+          ? <WorkoutVideoLibrary onClose={() => setTab(0)} />
+          : <div className="px-5 py-6"><PremiumLocked /></div>
+      )}
     </div>
   )
 }
 
 function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
+  const { member } = useMemberAuth()
+  const memberActive = isMemberActive(member)
   const [plans, setPlans] = useState([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(null)
@@ -252,11 +264,15 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
   return (
     <div className="flex flex-col gap-5">
       {/* ── Log a workout ── */}
-      <button onClick={() => { setEditingLog(null); setShowLogForm(true) }}
-        className="w-full font-bold py-3.5 rounded-xl text-sm transition-all"
-        style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
-        ➕ Log a workout
-      </button>
+      {memberActive ? (
+        <button onClick={() => { setEditingLog(null); setShowLogForm(true) }}
+          className="w-full font-bold py-3.5 rounded-xl text-sm transition-all"
+          style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
+          ➕ Log a workout
+        </button>
+      ) : (
+        <PremiumLocked compact />
+      )}
       {showLogForm && (
         <WorkoutLogFormModal
           initial={editingLog}
@@ -423,6 +439,8 @@ function WorkoutDetail({ plan, onBack }) {
 }
 
 function DietTab({ autoOpenScanner, onConsumedAutoOpen }) {
+  const { member } = useMemberAuth()
+  const memberActive = isMemberActive(member)
   const [plans, setPlans] = useState([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(null)
@@ -445,10 +463,10 @@ function DietTab({ autoOpenScanner, onConsumedAutoOpen }) {
 
   // Deep link from the Home screen's floating "Scan Meal" button
   useEffect(() => {
-    if (autoOpenScanner) {
+    if (autoOpenScanner && memberActive) {
       setShowScanner(true)
-      onConsumedAutoOpen?.()
     }
+    if (autoOpenScanner) onConsumedAutoOpen?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenScanner])
 
@@ -461,16 +479,20 @@ function DietTab({ autoOpenScanner, onConsumedAutoOpen }) {
   return (
     <div className="flex flex-col gap-5">
       {/* ── Scan Meal ── */}
-      <div className="flex flex-col gap-3">
-        <button onClick={() => setShowScanner(true)}
-          className="w-full font-bold py-3.5 rounded-xl text-sm transition-all"
-          style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
-          📸 Scan a Meal
-        </button>
-        <p className="text-[11px] text-center -mt-1" style={{ color: 'var(--color-secondary)' }}>
-          AI-estimated calories are approximate — see disclaimer after each scan.
-        </p>
-      </div>
+      {memberActive ? (
+        <div className="flex flex-col gap-3">
+          <button onClick={() => setShowScanner(true)}
+            className="w-full font-bold py-3.5 rounded-xl text-sm transition-all"
+            style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
+            📸 Scan a Meal
+          </button>
+          <p className="text-[11px] text-center -mt-1" style={{ color: 'var(--color-secondary)' }}>
+            AI-estimated calories are approximate — see disclaimer after each scan.
+          </p>
+        </div>
+      ) : (
+        <PremiumLocked compact />
+      )}
       {showScanner && (
         <FoodScannerModal onClose={() => setShowScanner(false)} onSaved={loadScans} />
       )}
@@ -1113,12 +1135,17 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
   }
 
   /* ── Session list view ── */
+  // Only the member's current plan is shown here — if they've somehow got
+  // more than one active plan, the most recently started one wins.
   const activePlans = ptPlans.filter((p) => p.status === 'active')
+  const currentPlan = activePlans.length > 0
+    ? [...activePlans].sort((a, b) => new Date(b.startDate) - new Date(a.startDate))[0]
+    : null
 
   if (sessions.length === 0) return (
     <div className="flex flex-col gap-4">
-      {activePlans.length > 0
-        ? activePlans.map((plan) => <PTPlanCard key={plan._id} plan={plan} />)
+      {currentPlan
+        ? <PTPlanCard plan={currentPlan} />
         : <NoPTPlanCard catalog={catalog} />}
       <EmptyState icon="💪" title="No PT sessions yet"
         sub="Book a slot with a trainer, or wait for one to schedule you." />
@@ -1140,8 +1167,8 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
 
   return (
     <div className="flex flex-col gap-5">
-      {activePlans.length > 0
-        ? activePlans.map((plan) => <PTPlanCard key={plan._id} plan={plan} />)
+      {currentPlan
+        ? <PTPlanCard plan={currentPlan} />
         : <NoPTPlanCard catalog={catalog} />}
 
       <button onClick={() => setShowBooking(true)}
