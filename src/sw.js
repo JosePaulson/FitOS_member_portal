@@ -31,16 +31,40 @@ self.addEventListener('push', (event) => {
   }
 
   const { title = 'FitOS', body = '', url = '/', tag = 'fitos-general' } = payload
+  const isHydration = tag === 'hydration-reminder'
 
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      tag,               // notifications with the same tag replace each other
-      renotify: true,     // ...but still alert the user on replacement
-      icon:  '/icon-192.png',
-      badge: '/icon-192.png',
-      data: { url },
-    })
+    (async () => {
+      await self.registration.showNotification(title, {
+        body,
+        tag,               // notifications with the same tag replace each other
+        renotify: true,     // ...but still alert the user on replacement
+        icon:  '/icon-192.png',
+        badge: '/icon-192.png',
+        data: { url },
+        // Alarm-style behavior for the hydration reminder specifically:
+        // stay on screen until the member actually dismisses it (most
+        // notifications auto-hide after a few seconds) and use a longer,
+        // more insistent vibration pattern than a routine alert.
+        ...(isHydration && {
+          requireInteraction: true,
+          vibrate: [300, 150, 300, 150, 300, 150, 300],
+          actions: [{ action: 'dismiss', title: '✓ Got it' }],
+        }),
+      })
+
+      // The hydration reminder is scheduled server-side (see
+      // jobs/hydrationReminders.js) so it fires reliably even with the app
+      // fully closed. As a bonus, when a tab does happen to be open
+      // (foreground or background), tell it so it can ring the member's
+      // selected tone on a loop — a real system notification can't carry
+      // custom audio on most platforms, so this is the only place that
+      // ringing alarm experience can actually happen.
+      if (isHydration) {
+        const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+        for (const client of clientList) client.postMessage({ type: 'HYDRATION_REMINDER_FIRED' })
+      }
+    })()
   )
 })
 
@@ -56,6 +80,10 @@ self.addEventListener('push', (event) => {
  */
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
+
+  // Hydration's "✓ Got it" action — just close it, same as tapping the OS
+  // dismiss control. No need to launch the app for that.
+  if (event.action === 'dismiss') return
 
   if (event.action === 'mark-attendance') {
     event.waitUntil(

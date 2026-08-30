@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useHydration } from '../context/HydrationContext'
+import { useNotifications } from '../context/NotificationContext'
 
 function to12Hour(hhmm) {
   const [h, m] = hhmm.split(':').map(Number)
@@ -11,11 +12,17 @@ function to12Hour(hhmm) {
 /**
  * Drops into Profile — lets a member turn on hydration ("drink water")
  * reminders, pick which times of day they fire, and choose a tone.
- * All the scheduling logic lives in HydrationContext; this is presentation
- * + the "add a time" form only.
+ *
+ * Reminders are delivered by the server (a cron job sends a real Web Push
+ * notification at each configured time — see jobs/hydrationReminders.js),
+ * so they arrive even if FitOS is fully closed. That does mean this
+ * member needs an active push subscription, same as the general
+ * Notifications toggle above — so enabling here piggybacks on that same
+ * subscribe() flow if it hasn't happened yet, rather than asking twice.
  */
 export default function HydrationReminders() {
   const h = useHydration()
+  const notifications = useNotifications()
   const [busy, setBusy] = useState(false)
   const [newTime, setNewTime] = useState('08:00')
   const [timeError, setTimeError] = useState('')
@@ -24,8 +31,14 @@ export default function HydrationReminders() {
 
   async function toggle() {
     setBusy(true)
-    if (h.enabled) h.disable()
-    else await h.enable()
+    if (h.enabled) {
+      h.disable()
+    } else {
+      // Make sure a push subscription actually exists first — that's what
+      // lets the server reach this device once the app is closed.
+      const subscribed = notifications.subscribed || (await notifications.subscribe())
+      if (subscribed) h.enable()
+    }
     setBusy(false)
   }
 
@@ -35,6 +48,8 @@ export default function HydrationReminders() {
       setTimeError(h.times.includes(newTime) ? 'That time is already set' : 'Pick a valid time')
     }
   }
+
+  const needsResubscribe = h.enabled && !notifications.subscribed
 
   return (
     <div id="hydration" className="p-5 card">
@@ -46,14 +61,14 @@ export default function HydrationReminders() {
           <p className="text-xs mt-0.5" style={{ color: 'var(--color-secondary)' }}>
             {h.enabled
               ? `${h.times.length} reminder${h.times.length === 1 ? '' : 's'} a day to drink water`
-              : h.permission === 'denied'
+              : notifications.permission === 'denied'
                 ? 'Blocked — enable notifications in your browser settings'
                 : 'Get nudged to drink water throughout the day'}
           </p>
         </div>
         <button
           onClick={toggle}
-          disabled={busy || h.permission === 'denied'}
+          disabled={busy || notifications.permission === 'denied'}
           className="text-xs font-bold px-3.5 py-2 rounded-lg transition-all disabled:opacity-50 shrink-0"
           style={
             h.enabled
@@ -67,6 +82,14 @@ export default function HydrationReminders() {
 
       {h.error && (
         <p className="mt-3 text-xs" style={{ color: '#f87171' }}>{h.error}</p>
+      )}
+      {notifications.error && (
+        <p className="mt-3 text-xs" style={{ color: '#f87171' }}>{notifications.error}</p>
+      )}
+      {needsResubscribe && (
+        <p className="mt-3 text-xs px-3 py-2 rounded-lg" style={{ background: 'rgba(250,204,21,0.1)', border: '1px solid rgba(250,204,21,0.25)', color: '#facc15' }}>
+          Notifications got turned off for this device, so these reminders won't arrive. Re-enable notifications above to fix it.
+        </p>
       )}
 
       {h.enabled && (
@@ -118,7 +141,7 @@ export default function HydrationReminders() {
           <p className="text-[10px] mt-1.5" style={{ color: 'var(--color-secondary)' }}>Tap a tone to hear a preview.</p>
 
           <p className="text-[10px] mt-4" style={{ color: 'var(--color-secondary)' }}>
-            Reminders fire while FitOS is open — in this tab or a background one. Keep it installed and open in the background for the most reliable alerts; fully closing it pauses reminders, a limitation of browser-based alarms.
+            Reminders are sent from the server, so the notification always arrives, even with FitOS closed — and it stays on screen until you dismiss it, not a fleeting alert. If the app happens to be open, it also rings your chosen tone on a loop with a full-screen Dismiss/Snooze screen, like an alarm clock, since a device notification alone can't carry custom audio.
           </p>
         </div>
       )}

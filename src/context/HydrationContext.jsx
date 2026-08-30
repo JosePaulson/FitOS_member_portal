@@ -1,142 +1,171 @@
 import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react'
-import { istDateKey, istTimeOfDay } from '../lib/dateIST'
-import { loadHydrationSettings, saveHydrationSettings, isValidTime, loadFiredToday, markFired } from '../lib/hydrationSettings'
-import { playHydrationTone, HYDRATION_TONES } from '../lib/hydrationTones'
+import { hydrationApi } from '../api/index'
+import { loadHydrationSettings, saveHydrationSettings, isValidTime } from '../lib/hydrationSettings'
+import { playHydrationTone, playAlarmLoop, stopAlarmLoop, HYDRATION_TONES } from '../lib/hydrationTones'
+import AlarmRingingModal from '../components/AlarmRingingModal'
 
 const Ctx = createContext(null)
 
 function isSupported() {
-  return 'serviceWorker' in navigator && typeof Notification !== 'undefined'
+  return 'serviceWorker' in navigator && 'PushManager' in window && typeof Notification !== 'undefined'
 }
 
 /**
- * Shows the OS/browser-level "Hydrate!" notification directly via the
- * service worker — no server round-trip needed, same technique
- * GeofenceAttendancePrompt uses for its local "you're at the gym" alert.
- * Requires Notification permission already granted; never prompts itself.
- */
-async function showHydrateNotification() {
-  if (!isSupported() || Notification.permission !== 'granted') return
-  try {
-    const reg = await navigator.serviceWorker.ready
-    await reg.showNotification('🥛 Hydrate!', {
-      body: 'Time to drink a glass of water 💧',
-      tag: 'hydration-reminder',
-      renotify: true,
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
-      vibrate: [200, 100, 200],
-      data: { url: '/profile#hydration' },
-    })
-  } catch { /* notification display isn't critical — the in-app chime still covers the foreground case */ }
-}
-
-/**
- * Manages hydration reminder settings (enabled/times/tone) plus the alarm
- * loop that checks — roughly every 20 seconds, in IST wall-clock time,
- * same convention the rest of the app uses for schedules — whether "now"
- * matches one of the saved reminder times and hasn't already fired today.
+ * Hydration ("drink water") reminders.
  *
- * Settings live in localStorage (device-local, same pattern as the theme
- * preference) rather than the server, since this is a personal on-device
- * alarm, not something that needs to sync across a member's devices.
+ * `enabled`/`times` are owned by the server (see
+ * server/models/HydrationSchedule.js + jobs/hydrationReminders.js): a cron
+ * job checks every minute and sends a real Web Push notification for any
+ * matching time. That's what lets reminders fire even with the PWA fully
+ * closed — Web Push wakes the service worker independently of whether any
+ * tab is open, unlike a client-side setInterval loop, which only runs
+ * while a FitOS tab is open. This context just mirrors that server state
+ * for the UI and pushes edits back.
  *
- * Caveat, stated plainly rather than hidden: this loop only runs while a
- * FitOS tab is open (foreground or backgrounded) — standard web platform
- * APIs have no reliable way to wake a fully-closed tab/PWA on a schedule.
- * Keeping the app installed and open in the background gives the most
- * consistent results.
+ * `tone` stays local-only (localStorage) — the server can trigger a
+ * notification, but it can't make an arbitrary device ring a custom sound
+ * for it (most platforms don't support custom system-notification audio
+ * at all). Instead, whenever a hydration push happens to arrive while a
+ * tab is open, this context rings the selected tone on a loop — a real
+ * alarm, not one chime — via a full-screen ringing overlay with
+ * Dismiss/Snooze, until the member acts on it. See the `message` listener
+ * below and the matching postMessage in sw.js.
  */
 export function HydrationProvider({ children }) {
-  const [settings, setSettings] = useState(loadHydrationSettings)
-  const [permission, setPermission] = useState(isSupported() ? Notification.permission : 'unsupported')
+  const cached = loadHydrationSettings()
+  const [enabled, setEnabledState] = useState(cached.enabled)
+  const [times, setTimes] = useState(cached.times)
+  const [tone, setTone] = useState(cached.tone)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const settingsRef = useRef(settings)
-  settingsRef.current = settings
+  const initializedRef = useRef(false)
 
-  const persist = useCallback((next) => {
-    setSettings(next)
-    saveHydrationSettings(next)
+  // Server is the source of truth for enabled/times — load it on mount and
+  // reconcile with the local cache that was rendered instantly above.
+  useEffect(() => {
+    hydrationApi.get()
+      .then(({ data }) => {
+        setEnabledState(!!data.enabled)
+        setTimes(Array.isArray(data.times) ? data.times : [])
+      })
+      .catch(() => { /* offline or a hiccup — keep showing the local cache */ })
+      .finally(() => {
+        setLoading(false)
+        initializedRef.current = true
+      })
   }, [])
 
-  const enable = useCallback(async () => {
+  // Mirror to localStorage for instant paint next visit.
+  useEffect(() => {
+    saveHydrationSettings({ enabled, times, tone })
+  }, [enabled, times, tone])
+
+  // Push enabled/times to the server whenever they actually change (after
+  // the initial load above has run, so we don't immediately PUT back the
+  // exact values we just GET-ed).
+  useEffect(() => {
+    if (!initializedRef.current) return
+    setSaving(true)
     setError('')
+    hydrationApi.update({ enabled, times })
+      .catch((err) => setError(err.response?.data?.message || 'Failed to save — check your connection and try again'))
+      .finally(() => setSaving(false))
+  }, [enabled, times])
+
+  const enable = useCallback(() => {
     if (!isSupported()) {
       setError('Notifications are not supported on this browser.')
       return false
     }
-    let perm = Notification.permission
-    if (perm === 'default') {
-      perm = await Notification.requestPermission()
-      setPermission(perm)
-    }
-    if (perm !== 'granted') {
-      setError(perm === 'denied'
-        ? 'Notifications are blocked. Enable them in your browser settings to turn this on.'
-        : 'Permission was not granted.')
-      return false
-    }
-    persist({ ...settingsRef.current, enabled: true })
+    setError('')
+    setEnabledState(true)
     return true
-  }, [persist])
+  }, [])
 
   const disable = useCallback(() => {
-    persist({ ...settingsRef.current, enabled: false })
-  }, [persist])
+    setEnabledState(false)
+  }, [])
 
   const addTime = useCallback((time) => {
     if (!isValidTime(time)) return false
-    if (settingsRef.current.times.includes(time)) return false
-    const times = [...settingsRef.current.times, time].sort()
-    persist({ ...settingsRef.current, times })
-    return true
-  }, [persist])
-
-  const removeTime = useCallback((time) => {
-    const times = settingsRef.current.times.filter((t) => t !== time)
-    persist({ ...settingsRef.current, times })
-  }, [persist])
-
-  const setTone = useCallback((tone) => {
-    persist({ ...settingsRef.current, tone })
-  }, [persist])
-
-  const previewTone = useCallback((toneId) => {
-    playHydrationTone(toneId || settingsRef.current.tone)
+    let added = false
+    setTimes((prev) => {
+      if (prev.includes(time)) return prev
+      added = true
+      return [...prev, time].sort()
+    })
+    return added
   }, [])
 
-  // The alarm loop itself.
-  useEffect(() => {
-    function tick() {
-      const current = settingsRef.current
-      if (!current.enabled || current.times.length === 0) return
+  const removeTime = useCallback((time) => {
+    setTimes((prev) => prev.filter((t) => t !== time))
+  }, [])
 
-      const now = new Date()
-      const nowKey = istDateKey(now)
-      const nowHHMM = istTimeOfDay(now)
+  const previewTone = useCallback((toneId) => {
+    playHydrationTone(toneId || tone)
+  }, [tone])
 
-      const fired = loadFiredToday()
-      const alreadyFiredTimes = fired.date === nowKey ? fired.times : []
+  // ── The ringing alarm itself ──────────────────────────────────────────
+  const [ringing, setRinging] = useState(false)
+  const snoozeTimerRef = useRef(null)
+  const toneRef = useRef(tone)
+  toneRef.current = tone
 
-      if (current.times.includes(nowHHMM) && !alreadyFiredTimes.includes(nowHHMM)) {
-        markFired(nowKey, nowHHMM)
-        showHydrateNotification()
-        playHydrationTone(current.tone)
-      }
+  const startAlarm = useCallback(() => {
+    playAlarmLoop(toneRef.current)
+    setRinging(true)
+  }, [])
+
+  const dismissAlarm = useCallback(() => {
+    stopAlarmLoop()
+    setRinging(false)
+    if (snoozeTimerRef.current) {
+      clearTimeout(snoozeTimerRef.current)
+      snoozeTimerRef.current = null
     }
+  }, [])
 
-    tick() // covers reopening the app during an alarm minute that already ticked once elsewhere
-    const id = setInterval(tick, 20000)
-    return () => clearInterval(id)
+  const snoozeAlarm = useCallback((minutes = 5) => {
+    stopAlarmLoop()
+    setRinging(false)
+    if (snoozeTimerRef.current) clearTimeout(snoozeTimerRef.current)
+    // Client-side only — like the ring itself, this needs the tab to stay
+    // open for the snooze to actually go off, since it's just a delayed
+    // re-trigger rather than a new server-scheduled push.
+    snoozeTimerRef.current = setTimeout(startAlarm, minutes * 60 * 1000)
+  }, [startAlarm])
+
+  // Rings whenever a hydration push arrives while this tab is open
+  // (foreground or background) — the server-sent notification itself
+  // still shows regardless (see sw.js), this is the "long, ringing"
+  // experience layered on top when the app happens to be open.
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    function handleMessage(event) {
+      if (event.data?.type === 'HYDRATION_REMINDER_FIRED') startAlarm()
+    }
+    navigator.serviceWorker.addEventListener('message', handleMessage)
+    return () => navigator.serviceWorker.removeEventListener('message', handleMessage)
+  }, [startAlarm])
+
+  // Stop any ring in flight if the provider ever unmounts (app closing the
+  // tab, hot-reload, etc.) — don't leave audio scheduled with no UI to
+  // dismiss it.
+  useEffect(() => () => {
+    stopAlarmLoop()
+    if (snoozeTimerRef.current) clearTimeout(snoozeTimerRef.current)
   }, [])
 
   const value = {
     supported: isSupported(),
-    permission,
-    enabled: settings.enabled,
-    times: settings.times,
-    tone: settings.tone,
+    permission: isSupported() ? Notification.permission : 'unsupported',
+    enabled,
+    times,
+    tone,
     tones: HYDRATION_TONES,
+    loading,
+    saving,
     error,
     enable,
     disable,
@@ -144,9 +173,17 @@ export function HydrationProvider({ children }) {
     removeTime,
     setTone,
     previewTone,
+    ringing,
+    dismissAlarm,
+    snoozeAlarm,
   }
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
+  return (
+    <Ctx.Provider value={value}>
+      {children}
+      {ringing && <AlarmRingingModal onDismiss={dismissAlarm} onSnooze={snoozeAlarm} />}
+    </Ctx.Provider>
+  )
 }
 
 export function useHydration() {

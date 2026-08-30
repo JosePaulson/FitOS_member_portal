@@ -120,6 +120,11 @@ export const mealLogApi = {
   remove: (id) => api.delete(`/member-portal/meal-log/${id}`),
 }
 
+export const hydrationApi = {
+  get: () => api.get('/member-portal/hydration'),
+  update: (data) => api.put('/member-portal/hydration', data),
+}
+
 export const chatApi = {
   send: (messages) => api.post('/member-portal/chat', { messages }),
   suggestions: () => api.get('/member-portal/chat/suggestions'),

@@ -1,5 +1,4 @@
 const SETTINGS_KEY = 'fitos_hydration_settings'
-const FIRED_KEY     = 'fitos_hydration_fired'
 
 const DEFAULT_SETTINGS = {
   enabled: false,
@@ -11,7 +10,13 @@ export function isValidTime(t) {
   return typeof t === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(t)
 }
 
-/** Reads saved hydration reminder settings from localStorage (device-local, same pattern as the theme preference). */
+/**
+ * Local cache of hydration reminder settings, for instant paint on
+ * revisit — same pattern as the theme preference (useTheme.js). The
+ * server (see server/models/HydrationSchedule.js) is the source of truth
+ * for `enabled`/`times` since that's what the reminder cron job reads;
+ * `tone` lives here only, since it's purely a client-side playback choice.
+ */
 export function loadHydrationSettings() {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY)
@@ -33,33 +38,4 @@ export function saveHydrationSettings(settings) {
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
   } catch { /* storage unavailable (private browsing etc.) — setting just won't persist */ }
-}
-
-/**
- * Tracks which reminder times have already fired today, so a 20-second
- * poll tick doesn't re-fire the same slot repeatedly within its minute,
- * and reopening the app later the same day doesn't replay reminders that
- * already happened while it was closed.
- */
-export function loadFiredToday() {
-  try {
-    const raw = localStorage.getItem(FIRED_KEY)
-    if (!raw) return { date: '', times: [] }
-    const parsed = JSON.parse(raw)
-    return { date: parsed.date || '', times: Array.isArray(parsed.times) ? parsed.times : [] }
-  } catch {
-    return { date: '', times: [] }
-  }
-}
-
-export function markFired(dateKey, time) {
-  const current = loadFiredToday()
-  const times = current.date === dateKey ? [...current.times, time] : [time]
-  saveFiredToday({ date: dateKey, times })
-}
-
-function saveFiredToday(state) {
-  try {
-    localStorage.setItem(FIRED_KEY, JSON.stringify(state))
-  } catch { /* best-effort */ }
 }
