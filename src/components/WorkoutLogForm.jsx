@@ -9,6 +9,8 @@ import ShareIcon from './ShareIcon'
 import { useExerciseCatalog } from '../hooks/useExerciseCatalog'
 import { useDragReorder } from '../hooks/useDragReorder'
 import { toISTInputValue, parseISTInputValue, fmtISTDateTime } from '../lib/dateIST'
+import { useMemberAuth } from '../context/MemberAuthContext'
+import { loadWorkoutDraft, saveWorkoutDraft, clearWorkoutDraft, workoutDraftHasContent } from '../lib/workoutDraft'
 
 // Exercises were keyed by their array index in the list below, which is
 // exactly the wrong key for a reorderable list: on every drag, React sees
@@ -40,6 +42,35 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
   const [error, setError] = useState('')
 
   const set = (f) => (e) => setForm((v) => ({ ...v, [f]: e.target.value }))
+
+  // ── Draft recovery (new logs only) ──────────────────────────────────────
+  // If the member started logging a workout and left without saving, offer
+  // to restore it (rather than silently overwriting or ignoring it). Editing
+  // an existing log never uses drafts — it reads/writes the real record.
+  const { member } = useMemberAuth()
+  const memberId = member?.id ?? member?._id // login returns `id`, /me returns `_id`
+  const [draft, setDraft] = useState(() => (!initial ? loadWorkoutDraft(memberId) : null))
+  function restoreDraft() {
+    if (draft?.form) {
+      const exercises = draft.form.exercises?.length
+        ? draft.form.exercises
+        : [{ name: '', sets: '', reps: '', weight: '', muscleGroup: '' }]
+      setForm({ ...draft.form, exercises: exercises.map((e) => withKey(stripKey(e))) })
+    }
+    setDraft(null)
+  }
+  function discardDraft() {
+    clearWorkoutDraft(memberId)
+    setDraft(null)
+  }
+  // Keep autosaving as they work — but only once they've actually started,
+  // and not while a restorable draft is still waiting on a decision (else
+  // the untouched blank form would overwrite it the instant the modal opens).
+  useEffect(() => {
+    if (initial || draft) return
+    if (!workoutDraftHasContent(form)) return
+    saveWorkoutDraft(memberId, { ...form, exercises: form.exercises.map(stripKey) })
+  }, [initial, draft, form, memberId])
 
   // Refs to each exercise row so a newly-added one can be scrolled into
   // view — cleared and rebuilt every render, indexed to match form.exercises.
@@ -132,6 +163,7 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
       const { data: saved } = initial
         ? await portalApi.updateWorkoutLog(initial._id, payload)
         : await portalApi.logWorkout(payload)
+      if (!initial) clearWorkoutDraft(memberId)
       onSaved(saved)
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to save workout')
@@ -151,6 +183,19 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
 
         {error && (
           <p className="px-3 py-2 mb-3 text-xs rounded-lg" style={{ background: 'rgba(248,113,113,0.1)', color: '#f87171' }}>{error}</p>
+        )}
+
+        {draft && (
+          <div className="flex items-center justify-between gap-3 px-3 py-2.5 mb-3 text-xs rounded-lg"
+            style={{ background: 'rgba(200,241,53,0.06)', border: '1px solid rgba(200,241,53,0.25)' }}>
+            <span style={{ color: 'var(--color-primary)' }}>
+              📝 You have an unsaved workout from {new Date(draft.savedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.
+            </span>
+            <div className="flex gap-3 shrink-0">
+              <button type="button" onClick={restoreDraft} className="font-semibold" style={{ color: 'var(--color-accent)' }}>Restore</button>
+              <button type="button" onClick={discardDraft} style={{ color: 'var(--color-secondary)' }}>Discard</button>
+            </div>
+          </div>
         )}
 
         <div className="flex flex-col gap-3">
