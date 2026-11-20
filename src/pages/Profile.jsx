@@ -331,7 +331,12 @@ export default function Profile() {
   // workout should count as ONE check-in, not several — union all three
   // date-key sets rather than summing. A workout log counts toward
   // attendance exactly like a PT session does.
-  const totalCheckinDates = new Set([...attendedDates, ...ptSessionsByDate.keys(), ...workoutLogsByDate.keys()])
+  // Only PT sessions that actually happened (completed) count — a merely
+  // scheduled/upcoming one is not a check-in yet.
+  const completedPTDates = [...ptSessionsByDate.entries()]
+    .filter(([, sessions]) => sessions.some((s) => s.status === 'completed'))
+    .map(([k]) => k)
+  const totalCheckinDates = new Set([...attendedDates, ...completedPTDates, ...workoutLogsByDate.keys()])
   const totalCheckins = totalCheckinDates.size
 
   // "Total PT" only counts sessions that actually happened — scheduled
@@ -604,6 +609,9 @@ export default function Profile() {
               const workoutLog = workoutLogsByDate.get(dateStr)
               const hasLog = !!workoutLog
               const isToday = dateStr === today
+              // Any one of attendance / completed PT / workout log marks the day as attended (one count per day).
+              const ptDone = hasPT && ptSessionStatus === 'completed'
+              const counted = ptDone || attended || hasLog
 
               // A day can have both a PT session and a self-logged workout —
               // clicking goes to whichever is more specific (PT first, since
@@ -634,23 +642,20 @@ export default function Profile() {
                     // border, no fill — so it reads as "coming up" rather
                     // than "done". Plain attendance/self-logged days keep
                     // the default solid lime fill.
-                    background: hasPT
-                      ? (ptSessionStatus === 'completed' ? '#9333ea66' : 'transparent')
-                      : hasWeeklySlot ? 'transparent'
-                        : (attended || hasLog) ? S.accent : 'transparent',
-                    color: hasPT
-                      ? (ptSessionStatus === 'completed' ? '#fafafa' : '#f59e0b')
-                      : hasWeeklySlot ? '#f59e0b'
-                        : (attended || hasLog) ? '#0D0D0D'
+                    background: ptDone ? '#9333ea66'
+                      : counted ? S.accent
+                        : 'transparent',
+                    color: ptDone ? '#fafafa'
+                      : counted ? '#0D0D0D'
+                        : (hasPT || hasWeeklySlot) ? '#f59e0b'
                           : isToday ? S.accent
                             : S.hint,
-                    border: hasPT
-                      ? (ptSessionStatus === 'completed' ? '1px solid #9333ea55' : '1px solid #f59e0b')
-                      : hasWeeklySlot ? '1px solid #f59e0b'
-                        : (attended || hasLog) ? '1px solid transparent'
+                    border: ptDone ? '1px solid #9333ea55'
+                      : (hasPT || hasWeeklySlot) ? '1px solid #f59e0b'
+                        : counted ? '1px solid transparent'
                           : isToday ? `1px solid ${S.accent}`
                             : '1px solid transparent',
-                    fontWeight: (hasPT || hasWeeklySlot || attended || hasLog) ? 700 : 400,
+                    fontWeight: (hasPT || hasWeeklySlot || counted) ? 700 : 400,
                   }}>
                   <span className="leading-none">{day}</span>
                   {(ptTime || hasWeeklySlot) && (
@@ -673,7 +678,7 @@ export default function Profile() {
                   {(hasPT || hasWeeklySlot) && (
                     <span
                       className="absolute -top-0 -right-0 w-3.5 h-3.5 rounded-bl-full rounded-tr-[10px] flex items-center justify-center text-[5.5px] font-bold leading-none"
-                      style={{ color: hasPT && ptSessionStatus === 'completed' ? '#fafafa' : '#f59e0b' }}
+                      style={{ color: ptDone ? '#fafafa' : counted ? '#0D0D0D' : '#f59e0b' }}
                       title={extraPTCount > 0 ? `${ptSessionsToday.length} PT sessions` : 'PT session'}
                     >
                       {extraPTCount > 0 ? `${ptSessionsToday.length}×` : 'PT'}

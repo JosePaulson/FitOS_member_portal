@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMemberAuth } from '../context/MemberAuthContext'
 import { isMemberActive } from '../lib/membership'
 import { portalApi } from '../api/index'
+import { geoErrorMessage } from '../lib/errors'
 
 function distanceMeters(lat1, lng1, lat2, lng2) {
   const R = 6371000
@@ -74,7 +75,7 @@ export default function GeofenceAttendancePrompt() {
     ;(async () => {
       try {
         const { data } = await portalApi.attendanceToday()
-        if (data.alreadyMarked) return
+        if (data.alreadyMarked || data.onHold) return
 
         const pos = await getPosition({ enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 })
         const distance = distanceMeters(
@@ -104,7 +105,7 @@ export default function GeofenceAttendancePrompt() {
       void data
     } catch (err) {
       setStatus('error')
-      setError(err.response?.data?.message || 'Could not get your location — try again')
+      setError(geoErrorMessage(err, 'Could not get your location — try again'))
     }
   }
 

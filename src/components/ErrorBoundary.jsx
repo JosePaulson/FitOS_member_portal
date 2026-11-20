@@ -1,5 +1,6 @@
 import { Component } from 'react'
 import { resetAppCachesAndReload } from '../lib/recovery'
+import { IS_DEV } from '../lib/errors'
 
 /**
  * Wraps <Routes> (see App.jsx) so a render crash on any one page shows a
@@ -20,17 +21,18 @@ import { resetAppCachesAndReload } from '../lib/recovery'
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props)
-    this.state = { hasError: false, resetting: false }
+    this.state = { hasError: false, resetting: false, error: null, componentStack: '' }
   }
 
-  static getDerivedStateFromError() {
-    return { hasError: true }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
   }
 
   componentDidCatch(error, info) {
     // No error-tracking service wired up yet — at minimum this keeps the
     // failure visible in the console instead of vanishing silently.
     console.error('[ErrorBoundary] caught a render error:', error, info?.componentStack)
+    this.setState({ componentStack: info?.componentStack || '' })
   }
 
   handleReload = async () => {
@@ -53,6 +55,14 @@ export default class ErrorBoundary extends Component {
           <p className="mt-2 text-sm" style={{ color: 'var(--color-secondary, #888880)' }}>
             This page hit an unexpected error. Reloading usually fixes it.
           </p>
+          {IS_DEV && this.state.error && (
+            <details className="mt-4 text-left">
+              <summary className="text-xs cursor-pointer" style={{ color: 'var(--color-secondary, #888880)' }}>Developer details (development only)</summary>
+              <pre className="p-3 mt-2 overflow-auto text-[11px] leading-snug whitespace-pre-wrap rounded-lg" style={{ background: 'rgba(0,0,0,0.4)', color: '#fca5a5', maxHeight: 220 }}>
+                {String(this.state.error?.stack || this.state.error?.message || this.state.error)}{this.state.componentStack}
+              </pre>
+            </details>
+          )}
           <button onClick={this.handleReload} disabled={this.state.resetting}
             className="w-full font-bold py-3.5 rounded-xl text-sm transition-all disabled:opacity-60 mt-5"
             style={{ background: 'var(--color-accent, #c8f135)', color: '#0D0D0D' }}>

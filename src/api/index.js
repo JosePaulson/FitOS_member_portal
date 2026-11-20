@@ -30,6 +30,32 @@ export const portalApi = {
   plans: () => api.get('/member-portal/plans'),
   invoices: (params = {}) => api.get('/member-portal/invoices', { params }),
   invoice: (id) => api.get(`/member-portal/invoices/${id}`),
+  invoicePdf: (id) => api.get(`/member-portal/invoices/${id}/pdf`, { responseType: 'blob' }),
+  referral: () => api.get('/member-portal/referral'),
+  // Waiver + PAR-Q: waiver() -> { enabled, text, questions, signed, current, needsGuardian, ... }
+  waiver: () => api.get('/member-portal/waiver'),
+  signWaiver: (data) => api.post('/member-portal/waiver/sign', data),
+
+  // Progress: body measurements + personal records
+  progress: () => api.get('/member-portal/progress/summary'),
+  addMeasurement: (data) => api.post('/member-portal/progress/measurements', data),
+  deleteMeasurement: (id) => api.delete(`/member-portal/progress/measurements/${id}`),
+
+  // Streaks, badges, challenges, leaderboard
+  engagement: () => api.get('/member-portal/engagement/overview'),
+  setEngagementSettings: (data) => api.patch('/member-portal/engagement/settings', data), // { weeklyGoal?, hideFromLeaderboard? }
+  challenges: () => api.get('/member-portal/engagement/challenges'),
+  leaderboard: (challengeId) => api.get('/member-portal/engagement/leaderboard', { params: challengeId ? { challengeId } : {} }),
+
+  // Notification inbox
+  notifications: (params = {}) => api.get('/member-portal/notifications', { params }),
+  unreadCount: () => api.get('/member-portal/notifications/unread-count'),
+  markNotificationsRead: (data) => api.post('/member-portal/notifications/read', data),     // { ids } | { all: true }
+  clearNotifications: () => api.delete('/member-portal/notifications'),
+
+  // Auto-renew (prepares the renewal + reminds; the member still confirms payment)
+  autoRenew: () => api.get('/member-portal/auto-renew'),
+  setAutoRenew: (enabled) => api.put('/member-portal/auto-renew', { enabled }),
   attendance: (params = {}) => api.get('/member-portal/attendance', { params }),
   attendanceSummary: () => api.get('/member-portal/attendance/summary'),
 
@@ -140,8 +166,11 @@ export const pushApi = {
 export const paymentApi = {
   config: () => api.get('/member-portal/payments/config'),
   payInvoice: (invoiceId) => api.post(`/member-portal/payments/invoices/${invoiceId}/order`),
-  membershipCheckout: (planId) => api.post('/member-portal/payments/membership/checkout', { planId }),
-  ptCheckout: (ptPlanId) => api.post('/member-portal/payments/pt/checkout', { ptPlanId }),
+  // couponCode is optional — the server re-validates it at checkout.
+  membershipCheckout: (planId, couponCode) => api.post('/member-portal/payments/membership/checkout', { planId, ...(couponCode ? { couponCode } : {}) }),
+  ptCheckout: (ptPlanId, couponCode) => api.post('/member-portal/payments/pt/checkout', { ptPlanId, ...(couponCode ? { couponCode } : {}) }),
+  // Preview only: { code, planId, type?: 'membership'|'pt' } -> { discount, finalAmount }
+  validateCoupon: (data) => api.post('/member-portal/payments/coupons/validate', data),
   verify: (data) => api.post('/member-portal/payments/verify', data),
 }
 

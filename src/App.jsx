@@ -19,6 +19,10 @@ import BMI      from './pages/BMI'
 import Chat     from './pages/Chat'
 import Equipment from './pages/Equipment'
 import Support from './pages/Support'
+import Waiver from './pages/Waiver'
+import Progress from './pages/Progress'
+import Challenges from './pages/Challenges'
+import Notifications from './pages/Notifications'
 import LegalHub       from './pages/legal/LegalHub'
 import TermsOfService from './pages/legal/TermsOfService'
 import PrivacyPolicy  from './pages/legal/PrivacyPolicy'
@@ -69,6 +73,10 @@ export default function App() {
             <Route path="chat"        element={<Chat />}     />
             <Route path="equipment"   element={<Equipment />} />
             <Route path="support"     element={<Support />} />
+            <Route path="waiver"      element={<Waiver />}  />
+            <Route path="progress"    element={<Progress />} />
+            <Route path="challenges"  element={<Challenges />} />
+            <Route path="notifications" element={<Notifications />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

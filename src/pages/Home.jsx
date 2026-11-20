@@ -4,7 +4,11 @@ import { useMemberAuth } from '../context/MemberAuthContext'
 import { portalApi, timetableApi } from '../api/index'
 import Spinner, { Badge, membershipBadge } from '../components/ui/Spinner'
 import StrengthEnduranceChart from '../components/StrengthEnduranceChart'
+import ReferralCard from '../components/ReferralCard'
+import WaiverBanner from '../components/WaiverBanner'
+import RenewCard from '../components/RenewCard'
 import { readCache, writeCache } from '../lib/offline'
+import { memberSince } from '../lib/membership'
 
 function daysUntil(d) { return d ? Math.ceil((new Date(d) - new Date()) / 86400000) : null }
 function fmt(d) {
@@ -99,11 +103,12 @@ export default function Home() {
   const ptScheduledNext2Weeks = countUpcomingOccurrences(summary?.ownSlots)
 
   // "Check-ins" on the home screen is this CALENDAR month only (not
-  // lifetime) — attendanceSummary() already groups by month, so just pick
-  // out the current one; PT completions for the month come from filtering
-  // the session list client-side, since the /pt-sessions totals are
-  // always all-time. Kept separate from `ptTotal` above, which other
-  // stat cards further down still use as an all-time figure.
+  // lifetime). attendanceSummary() already returns DISTINCT visit days per
+  // month — a day with attendance, a completed PT session and/or a logged
+  // workout is one day — so the current month's count is used as-is and
+  // must NOT have PT sessions added on top. PT completions for the month
+  // (the separate "PT sessions" card) come from filtering the session list
+  // client-side, since the /pt-sessions totals are always all-time.
   const now = new Date()
   const attendanceRows = Array.isArray(summary?.attendance) ? summary.attendance : []
   const totalCheckinsThisMonth = attendanceRows.find(
@@ -141,7 +146,7 @@ export default function Home() {
         <div className="flex gap-6 text-sm">
           <div>
             <p className="text-xs mb-0.5" style={{ color: 'var(--color-secondary)' }}>Member since</p>
-            <p className="font-semibold" style={{ color: 'var(--color-primary)' }}>{fmt(member.createdAt)}</p>
+            <p className="font-semibold" style={{ color: 'var(--color-primary)' }}>{fmt(memberSince(member))}</p>
           </div>
           <div>
             <p className="text-xs mb-0.5" style={{ color: 'var(--color-secondary)' }}>
@@ -164,7 +169,21 @@ export default function Home() {
             ❌ Membership expired — contact your gym to renew
           </div>
         )}
+        {member.membershipStatus === 'paused' && (
+          <div className="px-3 py-2 mt-4 text-xs font-medium rounded-lg"
+            style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.2)', color: '#fbbf24' }}>
+            ⏸️ Your membership is on hold{member.freeze?.startDate ? ` since ${fmt(member.freeze.startDate)}` : ''}
+            {member.freeze?.endDate ? ` and resumes on ${fmt(member.freeze.endDate)}` : ' — ask the front desk when you\u2019re ready to resume'}.
+            The days you\u2019re away are added back to your expiry date.
+          </div>
+        )}
       </div>
+
+      <RenewCard />
+
+      <WaiverBanner />
+
+      <ReferralCard />
 
       {/* Quick stats */}
       {loading
@@ -172,7 +191,7 @@ export default function Home() {
         : (
           <div className="grid grid-cols-3 gap-3">
             <Link to="/profile#attendance" preventScrollReset={true}>
-              <StatCard icon="📅" label="Check-ins" value={totalCheckinsThisMonth + ptCompletedThisMonth} sub="this month" />
+              <StatCard icon="📅" label="Check-ins" value={totalCheckinsThisMonth} sub="this month" />
             </Link>
             <Link to="/workouts" state={{ tab: 2 }}>
               <StatCard icon="💪" label="PT sessions" value={ptCompletedThisMonth} sub="this month" />
@@ -212,6 +231,9 @@ export default function Home() {
           { to: '/bmi', icon: '⚖️', label: 'BMI' },
           { to: '/plans', icon: '📋', label: 'Plans' },
           { to: '/transformation', icon: '📸', label: 'Transformations' },
+          { to: '/progress', icon: '📈', label: 'Progress' },
+          { to: '/challenges', icon: '🔥', label: 'Streaks' },
+          { to: '/notifications', icon: '🔔', label: 'Inbox' },
           { to: '/meal-log', icon: '🍽️', label: 'Meal Log' },
           { to: '/profile', icon: '👤', label: 'Profile' },
         ].map((l) => (

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { pushApi } from '../api/index'
+import { IS_DEV, pushErrorMessage } from '../lib/errors'
 
 const Ctx = createContext(null)
 
@@ -75,7 +76,7 @@ export function NotificationProvider({ children }) {
 
       const { data } = await pushApi.vapidPublicKey()
       if (!data.publicKey) {
-        setError('Push notifications are not configured on the server yet.')
+        setError(IS_DEV ? 'Push notifications are not configured on the server yet (VAPID keys missing?).' : 'Notifications aren\u2019t available yet. Please try again later.')
         return false
       }
 
@@ -89,7 +90,7 @@ export function NotificationProvider({ children }) {
       setSubscribed(true)
       return true
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Failed to enable notifications')
+      setError(pushErrorMessage(err, 'We couldn\u2019t turn on notifications. Please try again.'))
       return false
     }
   }, [supported])
@@ -106,7 +107,7 @@ export function NotificationProvider({ children }) {
       setSubscribed(false)
       return true
     } catch (err) {
-      setError(err.message || 'Failed to disable notifications')
+      setError(pushErrorMessage(err, 'We couldn\u2019t turn off notifications. Please try again.'))
       return false
     }
   }, [])

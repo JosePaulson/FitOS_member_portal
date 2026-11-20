@@ -43,23 +43,25 @@ export default function Workouts() {
   const [pendingSessionId, setPendingSessionId] = useState(null)
   const [pendingLogId, setPendingLogId] = useState(null)
   const [autoOpenScanner, setAutoOpenScanner] = useState(false)
-  const { state } = useLocation()
-  const consumedDeepLink = useRef(false)
+  const { state, key: locKey } = useLocation()
+  const consumedDeepLinks = useRef(new Set())
 
-  // Deep-link state (tab/sessionId/openLogId/openScanner) is applied once,
-  // on arrival. Without this guard, a later back-navigation off a detail
+  // Deep-link state (tab/sessionId/openLogId/openScanner) is applied once per
+  // navigation (tracked by location key, so a new deep link — e.g. the
+  // floating Videos button pressed while already on this page — still works).
+  // Without this guard, a later back-navigation off a detail
   // view opened via useBackableState would land back on this same route
   // with the *original* deep-link state object — re-triggering this effect
   // and immediately reopening the detail the member just closed.
   useEffect(() => {
-    if (consumedDeepLink.current) return
+    if (consumedDeepLinks.current.has(locKey)) return
     if (state?.tab === undefined && !state?.sessionId && !state?.openLogId && !state?.openScanner) return
-    consumedDeepLink.current = true
+    consumedDeepLinks.current.add(locKey)
     if (state?.tab !== undefined) setTab(state.tab)
     if (state?.sessionId) setPendingSessionId(state.sessionId)
     if (state?.openLogId) setPendingLogId(state.openLogId)
     if (state?.openScanner) setAutoOpenScanner(true)
-  }, [state])
+  }, [state, locKey])
 
   // Confirms (or corrects) the cache-seeded default tab above with a fresh
   // check — covers a first-ever visit with no cache yet, or a plan that's

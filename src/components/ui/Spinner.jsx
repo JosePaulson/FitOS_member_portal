@@ -66,6 +66,7 @@ export function invoiceBadge(status) {
   const map = {
     paid: ['lime', 'Paid'],
     pending: ['yellow', 'Pending'],
+    partial: ['yellow', 'Part paid'],
     overdue: ['red', 'Overdue'],
     cancelled: ['muted', 'Cancelled'],
     refunded: ['blue', 'Refunded'],

@@ -3,6 +3,8 @@ import { portalApi, paymentApi } from '../api/index'
 import Spinner, { Badge, invoiceBadge, EmptyState } from '../components/ui/Spinner'
 import { usePayment } from '../hooks/usePayment'
 import { useBackableState } from '../hooks/useBackableState'
+import { saveBlob, blobErrorMessage } from '../lib/download'
+import AutoRenewToggle from '../components/AutoRenewToggle'
 
 function fmt(d) {
   if (!d) return '—'
@@ -64,6 +66,8 @@ export default function Billing() {
     <div className="flex flex-col gap-5 px-5 py-6">
       <h1 className="text-xl font-bold tracking-tight" style={{ color: 'var(--color-primary)' }}>Billing</h1>
 
+      <AutoRenewToggle />
+
       {loading ? (
         <div className="flex justify-center py-12"><Spinner /></div>
       ) : invoices.length === 0 ? (
@@ -85,6 +89,9 @@ export default function Billing() {
                   </div>
                   <div className="flex flex-col items-end gap-1.5">
                     <span className="text-lg font-bold" style={{ color: 'var(--color-primary)' }}>₹{inv.totalAmount?.toLocaleString('en-IN')}</span>
+                    {inv.status === 'partial' && (
+                      <span className="text-[11px]" style={{ color: '#fbbf24' }}>₹{(inv.balanceDue ?? 0).toLocaleString('en-IN')} due</span>
+                    )}
                     <Badge color={color}>{label}</Badge>
                   </div>
                 </button>
@@ -112,6 +119,21 @@ function InvoiceDetail({ invoice, onBack, paymentsEnabled, onPaid }) {
   const [color, label] = invoiceBadge(invoice.status)
   const { pay, status, error, isProcessing } = usePayment()
   const planName = planNameOf(invoice)
+  const [downloading, setDownloading] = useState(false)
+  const [pdfError, setPdfError] = useState('')
+  // What's still owed — the full total unless part payments were made.
+  const due = invoice.balanceDue ?? invoice.totalAmount
+  const unpaid = invoice.status === 'pending' || invoice.status === 'partial'
+
+  async function handleDownload() {
+    setDownloading(true); setPdfError('')
+    try {
+      const { data } = await portalApi.invoicePdf(invoice._id)
+      saveBlob(data, `${invoice.invoiceNumber || 'invoice'}.pdf`)
+    } catch (err) {
+      setPdfError(await blobErrorMessage(err, 'Couldn\u2019t download the invoice. Please try again.'))
+    } finally { setDownloading(false) }
+  }
 
   function handlePay() {
     pay(() => paymentApi.payInvoice(invoice._id), {
@@ -135,11 +157,16 @@ function InvoiceDetail({ invoice, onBack, paymentsEnabled, onPaid }) {
 
       <div className="p-6 text-center card">
         <p className="mb-1 text-sm" style={{ color: 'var(--color-secondary)' }}>
-          {invoice.status === 'paid' ? 'Total paid' : 'Amount due'}
+          {invoice.status === 'paid' ? 'Total paid' : invoice.status === 'partial' ? 'Balance due' : 'Amount due'}
         </p>
         <p className="text-4xl font-black tracking-tight" style={{ color: 'var(--color-primary)' }}>
-          ₹{invoice.totalAmount?.toLocaleString('en-IN')}
+          ₹{(invoice.status === 'paid' ? invoice.totalAmount : due)?.toLocaleString('en-IN')}
         </p>
+        {invoice.status === 'partial' && (
+          <p className="mt-2 text-xs" style={{ color: 'var(--color-secondary)' }}>
+            ₹{invoice.amountPaid?.toLocaleString('en-IN')} of ₹{invoice.totalAmount?.toLocaleString('en-IN')} paid so far
+          </p>
+        )}
         {invoice.status === 'paid' && invoice.paidAt && (
           <p className="mt-2 text-xs" style={{ color: 'var(--color-accent)' }}>
             ✓ Paid on {new Date(invoice.paidAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
@@ -151,6 +178,10 @@ function InvoiceDetail({ invoice, onBack, paymentsEnabled, onPaid }) {
         {[
           { label: 'Plan', value: planName },
           { label: 'Invoice date', value: new Date(invoice.createdAt).toLocaleDateString('en-IN') },
+          ...(invoice.discountAmount > 0 ? [
+            { label: 'Price', value: `₹${invoice.listAmount?.toLocaleString('en-IN')}` },
+            { label: `Discount${invoice.couponCode ? ` (${invoice.couponCode})` : ''}`, value: `− ₹${invoice.discountAmount?.toLocaleString('en-IN')}` },
+          ] : []),
           { label: 'Base amount', value: `₹${invoice.baseAmount?.toLocaleString('en-IN')}` },
           { label: `GST (${invoice.taxRate}%)`, value: `₹${invoice.taxAmount?.toLocaleString('en-IN')}` },
           { label: 'Total', value: `₹${invoice.totalAmount?.toLocaleString('en-IN')}`, bold: true },
@@ -164,15 +195,32 @@ function InvoiceDetail({ invoice, onBack, paymentsEnabled, onPaid }) {
         ))}
       </div>
 
-      {invoice.pdfUrl && (
-        <a href={invoice.pdfUrl} target="_blank" rel="noopener noreferrer"
-          className="block w-full py-3 text-sm font-bold text-center transition-all rounded-xl"
-          style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
-          Download PDF invoice
-        </a>
+      {invoice.payments?.length > 0 && (
+        <div className="flex flex-col p-5 card" style={{ gap: 0 }}>
+          <p className="mb-2 text-xs font-semibold tracking-wide uppercase" style={{ color: 'var(--color-secondary)' }}>Payments received</p>
+          {invoice.payments.map((p, i) => (
+            <div key={p._id || i} className="flex justify-between py-2.5 text-sm"
+              style={{ borderTop: i === 0 ? 'none' : '1px solid var(--color-border)' }}>
+              <span style={{ color: 'var(--color-secondary)' }}>
+                {fmt(p.paidAt)}{p.method ? ` · ${p.method}` : ''}
+              </span>
+              <span style={{ color: 'var(--color-primary)', fontWeight: 500 }}>₹{p.amount?.toLocaleString('en-IN')}</span>
+            </div>
+          ))}
+        </div>
       )}
 
-      {invoice.status === 'pending' && (
+      <div className="flex flex-col gap-2">
+        <button onClick={handleDownload} disabled={downloading}
+          className="flex items-center justify-center w-full gap-2 py-3 text-sm font-bold text-center transition-all rounded-xl disabled:opacity-60"
+          style={{ background: unpaid ? 'transparent' : 'var(--color-accent)', color: unpaid ? 'var(--color-primary)' : '#0D0D0D', border: unpaid ? '1px solid var(--color-border)' : 'none' }}>
+          {downloading && <Spinner size="sm" />}
+          {downloading ? 'Preparing…' : invoice.status === 'paid' ? 'Download receipt (PDF)' : 'Download invoice (PDF)'}
+        </button>
+        {pdfError && <p className="text-xs text-center" style={{ color: '#f87171' }}>{pdfError}</p>}
+      </div>
+
+      {unpaid && (
         paymentsEnabled ? (
           <div className="flex flex-col gap-2">
             <button onClick={handlePay} disabled={isProcessing}
@@ -181,7 +229,7 @@ function InvoiceDetail({ invoice, onBack, paymentsEnabled, onPaid }) {
               {isProcessing && <Spinner size="sm" />}
               {status === 'processing' ? 'Opening payment…'
                 : status === 'verifying' ? 'Confirming payment…'
-                : `Pay ₹${invoice.totalAmount?.toLocaleString('en-IN')} now`}
+                : `Pay ₹${due?.toLocaleString('en-IN')} now`}
             </button>
             <p className="text-[11px] text-center" style={{ color: 'var(--color-secondary)' }}>
               Secured by Razorpay · UPI, cards, wallets & netbanking

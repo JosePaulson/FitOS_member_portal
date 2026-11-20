@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { isNetworkError } from '../lib/offline'
+import { normalizeAxiosError } from '../lib/errors'
 
 const BASE = import.meta.env.VITE_API_URL || '/api'
 
@@ -94,5 +95,9 @@ api.interceptors.response.use(
     return Promise.reject(err)
   }
 )
+
+// Last in the chain: whatever finally reaches a screen (including after a failed token refresh)
+// is made safe for the current environment — technical in development, plain language in production.
+api.interceptors.response.use((res) => res, (err) => Promise.reject(normalizeAxiosError(err)))
 
 export default api

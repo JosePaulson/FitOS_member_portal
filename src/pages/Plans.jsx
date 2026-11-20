@@ -3,6 +3,7 @@ import { useMemberAuth } from '../context/MemberAuthContext'
 import { portalApi, paymentApi } from '../api/index'
 import Spinner, { Badge, membershipBadge, EmptyState } from '../components/ui/Spinner'
 import { usePayment } from '../hooks/usePayment'
+import { membershipProgress } from '../lib/membership'
 
 function fmt(d) { return d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '—' }
 function daysUntil(d) { return d ? Math.ceil((new Date(d) - new Date()) / 86400000) : null }
@@ -30,6 +31,61 @@ function ExpiryWarning({ label, days }) {
   )
 }
 
+/**
+ * "Have a coupon?" — previews the discount via the server, then hands the code
+ * back so checkout can send it. Checkout re-validates, so this is only a preview.
+ */
+function CouponBox({ planId, type, applied, onApplied, disabled }) {
+  const [open, setOpen] = useState(false)
+  const [code, setCode] = useState('')
+  const [checking, setChecking] = useState(false)
+  const [err, setErr] = useState('')
+
+  async function apply() {
+    if (!code.trim()) return
+    setChecking(true); setErr('')
+    try {
+      const { data } = await paymentApi.validateCoupon({ code: code.trim(), planId, type })
+      onApplied({ code: data.code, discount: data.discount, finalAmount: data.finalAmount })
+      setOpen(false)
+    } catch (e) {
+      setErr(e.response?.data?.message || 'Couldn\u2019t check that coupon')
+    } finally { setChecking(false) }
+  }
+
+  if (applied) {
+    return (
+      <div className="flex items-center justify-between text-xs" style={{ color: 'var(--color-accent)' }}>
+        <span>🏷️ {applied.code} applied — you save ₹{applied.discount.toLocaleString('en-IN')}</span>
+        <button type="button" disabled={disabled} onClick={() => onApplied(null)} style={{ color: 'var(--color-secondary)' }}>Remove</button>
+      </div>
+    )
+  }
+  if (!open) {
+    return (
+      <button type="button" disabled={disabled} onClick={() => setOpen(true)}
+        className="self-start text-xs underline" style={{ color: 'var(--color-secondary)' }}>
+        Have a coupon?
+      </button>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex gap-2">
+        <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="COUPON CODE"
+          className="flex-1 min-w-0 px-3 py-2 text-xs uppercase rounded-lg"
+          style={{ background: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-primary)' }} />
+        <button type="button" onClick={apply} disabled={checking || !code.trim()}
+          className="px-3 py-2 text-xs font-bold rounded-lg disabled:opacity-50"
+          style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
+          {checking ? '…' : 'Apply'}
+        </button>
+      </div>
+      {err && <p className="text-[11px]" style={{ color: '#f87171' }}>{err}</p>}
+    </div>
+  )
+}
+
 export default function Plans() {
   const { member } = useMemberAuth()
   const [plans, setPlans] = useState([])
@@ -43,6 +99,12 @@ export default function Plans() {
   const [paymentsEnabled, setPaymentsEnabled] = useState(null)
   const { pay, status, error, isProcessing } = usePayment()
   const [payingKey, setPayingKey] = useState(null) // which specific button is mid-payment
+  const [coupons, setCoupons] = useState({})         // item key -> applied { code, discount, finalAmount }
+  const setCoupon = (key, v) => setCoupons((c) => {
+    const next = { ...c }
+    if (v) next[key] = v; else delete next[key]
+    return next
+  })
 
   useEffect(() => {
     portalApi.plans().then(({ data }) => setPlans(data)).catch(() => { }).finally(() => setLoading(false))
@@ -63,7 +125,7 @@ export default function Plans() {
 
   function payMembership(plan) {
     setPayingKey(`membership:${plan._id}`)
-    pay(() => paymentApi.membershipCheckout(plan._id), {
+    pay(() => paymentApi.membershipCheckout(plan._id, coupons[`membership:${plan._id}`]?.code), {
       description: `${plan.name} — Membership`,
       // member (currentPlanId/dates) refreshes automatically inside usePayment
     })
@@ -71,7 +133,7 @@ export default function Plans() {
 
   function payPT(plan) {
     setPayingKey(`pt:${plan._id}`)
-    pay(() => paymentApi.ptCheckout(plan._id), {
+    pay(() => paymentApi.ptCheckout(plan._id, coupons[`pt:${plan._id}`]?.code), {
       description: `${plan.name} — PT Plan`,
       onSuccess: () => {
         portalApi.ptPlans().then(({ data }) => setMyPtPlans(data.plans || [])).catch(() => { })
@@ -91,12 +153,8 @@ export default function Plans() {
 
   const [badgeColor, badgeLabel] = membershipBadge(member?.membershipStatus)
   const days = daysUntil(member?.membershipExpiryDate)
-  const expPct = (() => {
-    if (!member?.membershipExpiryDate || !member?.createdAt) return 0
-    const start = new Date(member.createdAt).getTime()
-    const end = new Date(member.membershipExpiryDate).getTime()
-    return Math.min(100, Math.max(0, Math.round(((Date.now() - start) / (end - start)) * 100)))
-  })()
+  // Progress runs from the membership's start date to its expiry (see lib/membership.js).
+  const expPct = membershipProgress(member).percent
 
   // Online purchase buttons only need to show up when there's actually a
   // reason to buy right now: no membership/PT plan yet (first purchase), or
@@ -166,11 +224,14 @@ export default function Plans() {
 
               {paymentsEnabled && member.currentPlanId && membershipExpiringSoon && (
                 <div className="flex flex-col gap-1.5 pt-1">
+                  <CouponBox planId={member.currentPlanId._id} type="membership" disabled={isProcessing}
+                    applied={coupons[`membership:${member.currentPlanId._id}`]}
+                    onApplied={(v) => setCoupon(`membership:${member.currentPlanId._id}`, v)} />
                   <button onClick={() => payMembership(member.currentPlanId)} disabled={isProcessing}
                     className="flex items-center justify-center w-full gap-2 py-3 text-sm font-bold transition-all rounded-lg disabled:opacity-60"
                     style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
                     {busy(`membership:${member.currentPlanId._id}`) && <Spinner size="sm" />}
-                    {payLabel(`membership:${member.currentPlanId._id}`, `Renew now — ₹${member.currentPlanId.price?.toLocaleString('en-IN')}`)}
+                    {payLabel(`membership:${member.currentPlanId._id}`, `Renew now — ₹${(coupons[`membership:${member.currentPlanId._id}`]?.finalAmount ?? member.currentPlanId.price)?.toLocaleString('en-IN')}`)}
                   </button>
                   {payingKey === `membership:${member.currentPlanId._id}` && error && (
                     <p className="text-xs text-center" style={{ color: '#f87171' }}>{error}</p>
@@ -243,11 +304,13 @@ export default function Plans() {
                         {!isCurrent && showMembershipButtons && (
                           paymentsEnabled ? (
                             <div className="flex flex-col gap-1.5 pt-1">
+                              <CouponBox planId={plan._id} type="membership" disabled={isProcessing}
+                                applied={coupons[key]} onApplied={(v) => setCoupon(key, v)} />
                               <button onClick={() => payMembership(plan)} disabled={isProcessing}
                                 className="flex items-center justify-center w-full gap-2 py-2.5 text-sm font-bold transition-all rounded-lg disabled:opacity-60"
                                 style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
                                 {busy(key) && <Spinner size="sm" />}
-                                {payLabel(key, `Buy this plan — ₹${plan.price.toLocaleString('en-IN')}`)}
+                                {payLabel(key, `Buy this plan — ₹${(coupons[key]?.finalAmount ?? plan.price).toLocaleString('en-IN')}`)}
                               </button>
                               {payingKey === key && error && (
                                 <p className="text-xs text-center" style={{ color: '#f87171' }}>{error}</p>
@@ -291,11 +354,13 @@ export default function Plans() {
                         {showPtButtons && (
                           paymentsEnabled ? (
                             <div className="flex flex-col gap-1.5 pt-1">
+                              <CouponBox planId={p._id} type="pt" disabled={isProcessing}
+                                applied={coupons[key]} onApplied={(v) => setCoupon(key, v)} />
                               <button onClick={() => payPT(p)} disabled={isProcessing}
                                 className="flex items-center justify-center w-full gap-2 py-2.5 text-sm font-bold transition-all rounded-lg disabled:opacity-60"
                                 style={{ background: 'var(--color-accent)', color: '#0D0D0D' }}>
                                 {busy(key) && <Spinner size="sm" />}
-                                {payLabel(key, `Buy — ₹${p.fee.toLocaleString('en-IN')}`)}
+                                {payLabel(key, `Buy — ₹${(coupons[key]?.finalAmount ?? p.fee).toLocaleString('en-IN')}`)}
                               </button>
                               {payingKey === key && error && (
                                 <p className="text-xs text-center" style={{ color: '#f87171' }}>{error}</p>

@@ -5,6 +5,8 @@ import InstallPrompt from '../InstallPrompt'
 import GeofenceAttendancePrompt from '../GeofenceAttendancePrompt'
 import RateLimitWarning from '../RateLimitWarning'
 import MembershipExpiredModal from '../MembershipExpiredModal'
+import NotificationBell from '../NotificationBell'
+import VideosFab from '../VideosFab'
 
 const TABS = [
   { to: '/', icon: '🏠', label: 'Home' },
@@ -41,11 +43,14 @@ export default function Layout() {
         <span className="text-lg font-black tracking-tight" style={{ color: 'var(--color-primary)' }}>
           Fit<span style={{ color: 'var(--color-accent)' }}>OS</span>
         </span>
-        {gym && (
-          <span className="text-xs truncate max-w-[160px]" style={{ color: 'var(--color-secondary)' }}>
-            {gym.name}
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {gym && (
+            <span className="text-xs truncate max-w-[130px]" style={{ color: 'var(--color-secondary)' }}>
+              {gym.name}
+            </span>
+          )}
+          <NotificationBell />
+        </div>
       </header>
 
       {/* Page content — extra bottom padding when the taller install banner
@@ -54,6 +59,9 @@ export default function Layout() {
       <main className="flex-1 overflow-y-auto" style={{ paddingBottom: installBannerVisible ? 220 : 'calc(80px + env(safe-area-inset-bottom, 0px))' }}>
         <Outlet />
       </main>
+
+      {/* Floating shortcut to Workouts → Videos */}
+      <VideosFab />
 
       {/* Install prompt — floats above the tab bar */}
       <InstallPrompt />
