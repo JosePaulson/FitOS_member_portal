@@ -52,22 +52,48 @@ export function todayISTKey() {
   return istDateKey(new Date())
 }
 
-/** Formats a date/date-like input using IST explicitly, regardless of device timezone. */
-export function fmtISTDate(d, opts = {}) {
-  if (!d) return '—'
-  return new Date(d).toLocaleDateString('en-IN', { timeZone: IST_TZ, ...opts })
+// ── Display formatting — the whole app shows dates as dd/mm/yyyy (India). ──
+const _dateParts = new Intl.DateTimeFormat('en-GB', { timeZone: IST_TZ, day: '2-digit', month: '2-digit', year: 'numeric', weekday: 'short' })
+function _ist(d) {
+  const o = {}
+  for (const { type, value } of _dateParts.formatToParts(new Date(d))) o[type] = value
+  return o
 }
 
-/** Formats a time using IST explicitly, regardless of device timezone. */
+/** dd/mm/yyyy in IST. `{ weekday: true }` (or any truthy weekday option) prefixes "Sat, ". */
+export function fmtISTDate(d, opts = {}) {
+  if (!d) return '—'
+  const dt = new Date(d)
+  if (Number.isNaN(dt.getTime())) return '—'
+  const p = _ist(dt)
+  const out = `${p.day}/${p.month}/${p.year}`
+  return opts.weekday ? `${p.weekday}, ${out}` : out
+}
+
+/** Formats a time (e.g. "3:45 pm") using IST explicitly, regardless of device timezone. */
 export function fmtISTTime(d, opts = {}) {
   if (!d) return ''
   return new Date(d).toLocaleTimeString('en-IN', { timeZone: IST_TZ, hour: 'numeric', minute: '2-digit', ...opts })
 }
 
-/** Formats a full date + time using IST explicitly. */
+/**
+ * dd/mm/yyyy, h:mm am/pm in IST. With no options both parts show; with
+ * options (kept for older callers) the date part shows if any of
+ * weekday/day/month/year is set and the time part if hour/minute is set.
+ */
 export function fmtISTDateTime(d, opts = {}) {
   if (!d) return '—'
-  return new Date(d).toLocaleString('en-IN', { timeZone: IST_TZ, ...opts })
+  const hasOpts = Object.keys(opts).length > 0
+  const showDate = !hasOpts || ['weekday', 'day', 'month', 'year'].some((k) => opts[k])
+  const showTime = !hasOpts || ['hour', 'minute'].some((k) => opts[k])
+  const parts = []
+  if (showDate) parts.push(fmtISTDate(d, opts))
+  if (showTime) parts.push(fmtISTTime(d))
+  return parts.join(', ')
 }
+
+export const fmtDate = fmtISTDate
+export const fmtDateTime = fmtISTDateTime
+export const fmtTime = fmtISTTime
 
 export { IST_TZ }

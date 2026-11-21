@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { fmtDate } from '../lib/dateIST'
 
 const BMI_CATEGORIES = [
   { max: 18.5, label: 'Underweight', color: '#60a5fa', tip: 'Consider a calorie surplus and strength training to build muscle mass.' },
@@ -86,7 +87,7 @@ export default function BMI() {
       bmi: +bmi.toFixed(1), category: cat.label, color: cat.color, tip: cat.tip,
       ideal, idealBodyWeight: ibw, bodyFat, bodyFatCat, gender,
       bmr: Math.round(bmr), weight: w.toFixed(1), height: h.toFixed(1),
-      date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+      date: fmtDate(new Date()),
     }
     setResult(r)
     const nh = [r, ...history.filter((_, i) => i < 9)]

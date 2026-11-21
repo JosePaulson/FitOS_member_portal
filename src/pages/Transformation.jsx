@@ -4,9 +4,11 @@ import Spinner, { EmptyState } from '../components/ui/Spinner'
 import { useMemberAuth } from '../context/MemberAuthContext'
 import { isMemberActive } from '../lib/membership'
 import PremiumLocked from '../components/PremiumLocked'
+import { fmtDate } from '../lib/dateIST'
+import { DateInput } from '../components/ui/DateInput'
 
 function formatDate(d) {
-  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  return fmtDate(d)
 }
 function todayInputValue() {
   const d = new Date()
@@ -228,7 +230,7 @@ function AddPhotoModal({ onClose, onAdded }) {
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
             <label className="text-xs font-semibold mb-1.5 block" style={{ color: 'var(--color-secondary)' }}>Date</label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} max={todayInputValue()}
+            <DateInput value={date} onChange={(e) => setDate(e.target.value)} max={todayInputValue()}
               className="w-full rounded-lg px-3 py-2.5 text-sm outline-none"
               style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-primary)' }} />
           </div>

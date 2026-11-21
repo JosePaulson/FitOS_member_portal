@@ -3,6 +3,7 @@ import { useMemberAuth } from '../context/MemberAuthContext'
 import { isMemberActive } from '../lib/membership'
 import { portalApi } from '../api/index'
 import { geoErrorMessage } from '../lib/errors'
+import { fmtDate } from '../lib/dateIST'
 
 function distanceMeters(lat1, lng1, lat2, lng2) {
   const R = 6371000
@@ -21,7 +22,7 @@ function getPosition(options) {
 }
 
 function todayLabel() {
-  return new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  return fmtDate(new Date(), { weekday: true })
 }
 
 /**

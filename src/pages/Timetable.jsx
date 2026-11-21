@@ -13,12 +13,10 @@ const WEEKDAYS = [
   { key: 'sunday', label: 'Sun', idx: 6 },
 ]
 
-const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-// Manual format (not toLocaleDateString) so it's always exactly "Aug 8"
-// regardless of the browser's locale settings.
+// Manual format so it's always exactly dd/mm/yyyy regardless of the
+// browser's locale settings.
 function formatShortDate(d) {
-  return `${MONTH_ABBR[d.getMonth()]} ${d.getDate()}`
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
 
 // The Monday that starts "this week" (weekOffset 0) or "next week" (1).

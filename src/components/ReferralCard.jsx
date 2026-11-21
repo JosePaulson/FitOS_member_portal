@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { portalApi } from '../api/index'
 import { useMemberAuth } from '../context/MemberAuthContext'
+import { dialog } from './ui/Dialog'
 
 /**
  * "Refer a friend" card. Renders nothing unless the gym has switched the
@@ -26,7 +27,7 @@ export default function ReferralCard() {
 
   async function copy() {
     try { await navigator.clipboard.writeText(info.code); setCopied(true); setTimeout(() => setCopied(false), 2000) }
-    catch { window.prompt('Your referral code:', info.code) }
+    catch { dialog.copy({ title: 'Your referral code', message: 'Copying automatically didn’t work — select the code below.', value: info.code }) }
   }
 
   async function share() {

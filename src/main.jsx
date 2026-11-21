@@ -9,6 +9,7 @@ import { NotificationProvider } from './context/NotificationContext'
 import { HydrationProvider } from './context/HydrationContext'
 import './index.css'
 import ScrollRestoration from './components/layout/ScrollRestoration'
+import { DialogHost } from './components/ui/Dialog'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -20,6 +21,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <NotificationProvider>
               <HydrationProvider>
                 <App />
+                <DialogHost />
               </HydrationProvider>
             </NotificationProvider>
           </MemberAuthProvider>

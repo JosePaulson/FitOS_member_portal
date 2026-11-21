@@ -129,6 +129,12 @@ export const transformationApi = {
   remove: (id) => api.delete(`/member-portal/transformation/${id}`),
 }
 
+/* ── Log sharing (member decides what the gym / trainers can see) ───────── */
+export const logSharingApi = {
+  get: () => api.get('/member-portal/log-sharing'),
+  update: (data) => api.put('/member-portal/log-sharing', data),
+}
+
 /* ── Meal Log (member — daily meal photo diary) ─────────────────────────── */
 export const mealLogApi = {
   list: (params = {}) => api.get('/member-portal/meal-log', { params }),

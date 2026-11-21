@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { portalApi } from '../api/index'
 import Spinner from '../components/ui/Spinner'
+import { dialog } from '../components/ui/Dialog'
+import { fmtDate } from '../lib/dateIST'
 
 const S = { primary: 'var(--color-primary)', secondary: 'var(--color-secondary)', accent: 'var(--color-accent)', border: 'var(--color-border)' }
 const ICON = { announcement: '📣', badge: '🏅', challenge: '🎯', renewal: '🔁', pr: '🏆', general: '🔔' }
@@ -12,7 +14,7 @@ function ago(d) {
   if (s < 3600) return `${Math.floor(s / 60)}m ago`
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`
   if (s < 7 * 86400) return `${Math.floor(s / 86400)}d ago`
-  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  return fmtDate(d)
 }
 
 export default function Notifications() {
@@ -51,8 +53,8 @@ export default function Notifications() {
     portalApi.markNotificationsRead({ all: true }).catch(() => {})
   }
   async function clearAll() {
-    if (!confirm('Clear all notifications?')) return
-    try { await portalApi.clearNotifications(); setItems([]); setUnread(0); setHasMore(false) } catch { alert('Couldn\u2019t clear them. Please try again.') }
+    if (!(await dialog.confirm({ title: 'Clear all notifications?', message: 'They’ll be removed from your inbox.', confirmLabel: 'Clear all', tone: 'danger' }))) return
+    try { await portalApi.clearNotifications(); setItems([]); setUnread(0); setHasMore(false) } catch { dialog.error('Please try again in a moment.', { title: 'Couldn’t clear them' }) }
   }
 
   if (error) return <p className="px-5 py-6 text-sm" style={{ color: '#f87171' }}>{error}</p>

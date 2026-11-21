@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { complaintApi, staffRatingApi } from '../api/index'
 import { Badge } from '../components/ui/Spinner'
+import { fmtDate } from '../lib/dateIST'
 
 const S = {
   primary: 'var(--color-primary)',
@@ -194,7 +195,7 @@ function MineTab() {
                 <div key={i} className="text-xs px-3 py-2 rounded-lg" style={{ background: 'var(--color-surface-2)', color: S.primary }}>
                   <p>{r.text}</p>
                   <p className="mt-1 text-[10px]" style={{ color: S.secondary }}>
-                    Gym team · {new Date(r.createdAt).toLocaleDateString('en-IN')}
+                    Gym team · {fmtDate(r.createdAt)}
                   </p>
                 </div>
               ))}
@@ -202,7 +203,7 @@ function MineTab() {
           )}
 
           <p className="text-[10px]" style={{ color: S.secondary }}>
-            Submitted {new Date(c.createdAt).toLocaleDateString('en-IN')}
+            Submitted {fmtDate(c.createdAt)}
           </p>
         </div>
       ))}

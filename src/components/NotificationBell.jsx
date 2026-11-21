@@ -11,7 +11,7 @@ export default function NotificationBell() {
     let cancelled = false
     const load = () => {
       if (document.hidden) return
-      portalApi.unreadCount().then(({ data }) => { if (!cancelled) setUnread(data.unread || 0) }).catch(() => { })
+      portalApi.unreadCount().then(({ data }) => { if (!cancelled) setUnread(data.unread || 0) }).catch(() => {})
     }
     load()
     const t = setInterval(load, 60_000)
@@ -33,7 +33,7 @@ export default function NotificationBell() {
 }
 
 /** Simple outlined bell in the FitOS accent colour. */
-function BellIcon({ size = 16 }) {
+function BellIcon({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)"
       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

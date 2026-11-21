@@ -5,6 +5,7 @@
 // rather than a plain text link, which is what makes sharing a workout
 // feel worth doing. Falls back to downloading the image (or copying the
 // text) on browsers/desktops without share-sheet support.
+import { fmtDate } from './dateIST'
 export async function shareContent({ title, text, imageBlob }) {
   const files = imageBlob ? [new File([imageBlob], 'fitos-workout.png', { type: 'image/png' })] : undefined
 
@@ -58,7 +59,7 @@ function toShareData(subject, { kind }) {
 
   const subtitleBits = []
   if (kind === 'pt' && subject.trainerId?.name) subtitleBits.push(`with ${subject.trainerId.name}`)
-  if (subject.date) subtitleBits.push(new Date(subject.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }))
+  if (subject.date) subtitleBits.push(fmtDate(subject.date))
 
   return {
     title: subject.title || (kind === 'pt' ? 'PT Session' : 'Workout'),

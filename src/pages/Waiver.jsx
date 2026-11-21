@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { portalApi } from '../api/index'
 import Spinner from '../components/ui/Spinner'
 import SignaturePad from '../components/SignaturePad'
+import { fmtDate } from '../lib/dateIST'
 
 const S = { primary: 'var(--color-primary)', secondary: 'var(--color-secondary)', accent: 'var(--color-accent)', border: 'var(--color-border)' }
 const inputStyle = { background: 'transparent', border: `1px solid ${S.border}`, color: S.primary }
-const fmt = (d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+const fmt = (d) => fmtDate(d)
 
 export default function Waiver() {
   const navigate = useNavigate()

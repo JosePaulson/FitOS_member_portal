@@ -17,6 +17,7 @@ import WorkoutVideoLibrary from '../components/WorkoutVideoLibrary'
 import { useMemberAuth } from '../context/MemberAuthContext'
 import { isMemberActive } from '../lib/membership'
 import PremiumLocked from '../components/PremiumLocked'
+import { fmtDate } from '../lib/dateIST'
 
 const TABS = ['Workout', 'Diet', 'PT Sessions', 'Videos']
 
@@ -347,7 +348,7 @@ function WorkoutTab({ initialLogId, onConsumedInitialLog }) {
                         )}
                       </p>
                       <p className="text-xs mt-0.5" style={{ color: 'var(--color-secondary)' }}>
-                        {new Date(log.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                        {fmtDate(log.date)}
                         {log.exercises?.length > 0 && ` · ${log.exercises.length} exercise${log.exercises.length === 1 ? '' : 's'}`}
                       </p>
                     </div>
@@ -681,7 +682,7 @@ function PTPlanCard({ plan }) {
       <div className="flex flex-wrap gap-3 mt-3 text-xs" style={{ color: 'var(--color-secondary)' }}>
         {plan.trainerId?.name && <span>🏋️ {plan.trainerId.name}</span>}
         <span>💰 ₹{plan.fee?.toLocaleString('en-IN')}</span>
-        <span>📅 Expires {new Date(plan.expiryDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+        <span>📅 Expires {fmtDate(plan.expiryDate)}</span>
       </div>
     </div>
   )
@@ -885,9 +886,7 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
               {selected.title || 'PT Session'}
             </h2>
             <p className="mt-1 text-xs" style={{ color: 'var(--color-secondary)' }}>
-              {new Date(selected.date).toLocaleDateString('en-IN', {
-                weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-              })}
+              {fmtDate(selected.date, { weekday: true })}
               {hasTimeComponent(selected.date) && ` · ${formatTime(selected.date)}`}
             </p>
             {selected.trainerId?.name ? (
@@ -1104,9 +1103,7 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
               color: 'var(--color-accent)',
             }}>
             ✓ You confirmed attendance on{' '}
-            {new Date(selected.acknowledgedAt).toLocaleDateString('en-IN', {
-              day: 'numeric', month: 'long', year: 'numeric',
-            })}
+            {fmtDate(selected.acknowledgedAt)}
           </div>
         ) : ['cancelled', 'pending', 'declined'].includes(selected.status) ? null : (
           <div className="px-4 py-3 text-xs text-center rounded-xl"
@@ -1262,9 +1259,7 @@ function PTTab({ initialSessionId, onConsumedInitialSession }) {
                       {s.title || 'PT Session'}
                     </p>
                     <p className="text-xs mt-0.5" style={{ color: 'var(--color-secondary)' }}>
-                      {new Date(s.date).toLocaleDateString('en-IN', {
-                        weekday: 'short', day: 'numeric', month: 'short',
-                      })}
+                      {fmtDate(s.date, { weekday: true })}
                       {hasTimeComponent(s.date) && ` · ${formatTime(s.date)}`}
                       {s.trainerId?.name
                         ? ` · ${s.trainerId.name}`
@@ -1505,7 +1500,7 @@ function BookingModal({ onClose, onBooked }) {
             {date && (
               <div className="mb-4">
                 <p className="mb-2 text-xs font-semibold" style={{ color: 'var(--color-secondary)' }}>
-                  Time on {date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' })}
+                  Time on {fmtDate(date, { weekday: true })}
                 </p>
                 {slotsLoading ? (
                   <div className="flex justify-center py-3"><Spinner size="sm" /></div>

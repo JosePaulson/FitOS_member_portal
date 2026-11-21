@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { portalApi } from '../api/index'
 import Spinner from '../components/ui/Spinner'
+import { dialog } from '../components/ui/Dialog'
+import { fmtDate } from '../lib/dateIST'
+import { DateInput } from '../components/ui/DateInput'
 
 const S = { primary: 'var(--color-primary)', secondary: 'var(--color-secondary)', accent: 'var(--color-accent)', border: 'var(--color-border)' }
 const inputStyle = { background: 'transparent', border: `1px solid ${S.border}`, color: S.primary }
@@ -9,8 +12,7 @@ const METRICS = [
   { key: 'waistCm', label: 'Waist', unit: 'cm' }, { key: 'chestCm', label: 'Chest', unit: 'cm' },
   { key: 'hipsCm', label: 'Hips', unit: 'cm' }, { key: 'armCm', label: 'Arm', unit: 'cm' }, { key: 'thighCm', label: 'Thigh', unit: 'cm' },
 ]
-const fmtDate = (d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
-const fmtDateY = (d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+const fmtDateY = fmtDate
 const todayIST = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
 
 export default function Progress() {
@@ -33,8 +35,8 @@ export default function Progress() {
   const ch = data.changes[metric]
 
   async function remove(id) {
-    if (!confirm('Delete this check-in?')) return
-    try { await portalApi.deleteMeasurement(id); load() } catch { alert('Couldn\u2019t delete that. Please try again.') }
+    if (!(await dialog.confirm({ title: 'Delete check-in?', message: 'This body check-in will be removed from your progress.', confirmLabel: 'Delete', tone: 'danger' }))) return
+    try { await portalApi.deleteMeasurement(id); load() } catch { dialog.error('Please try again in a moment.', { title: 'Couldn’t delete it' }) }
   }
 
   return (
@@ -205,7 +207,7 @@ function AddMeasurement({ onClose, onSaved }) {
         </div>
         {error && <p className="px-3 py-2 text-sm rounded-xl" style={{ background: 'rgba(248,113,113,0.1)', color: '#f87171' }}>{error}</p>}
         <label className="flex flex-col gap-1 text-xs font-semibold uppercase" style={{ color: S.secondary }}>Date
-          <input type="date" value={f.date} max={todayIST()} onChange={set('date')} className="px-3 py-2.5 text-sm font-normal normal-case rounded-xl" style={inputStyle} />
+          <DateInput value={f.date} max={todayIST()} onChange={set('date')} className="px-3 py-2.5 text-sm font-normal normal-case rounded-xl" style={inputStyle} />
         </label>
         <div className="grid grid-cols-2 gap-3">
           {METRICS.map((m) => (

@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { fmtDateTime } from '../lib/dateIST'
 
 export default function RecentScans({ scans = [], scansLoading = false }) {
 	const [open, setOpen] = useState(false);
@@ -86,14 +87,7 @@ export default function RecentScans({ scans = [], scansLoading = false }) {
 										{s.mealLabel || 'Scanned meal'}
 									</p>
 									<p className="text-xs mt-0.5" style={{ color: 'var(--color-secondary)' }}>
-										{new Intl.DateTimeFormat('en-IN', {
-											day: 'numeric',
-											month: 'short',
-											hour: 'numeric',
-											minute: '2-digit',
-											hour12: true,
-											timeZone: 'Asia/Kolkata',
-										}).format(new Date(s.createdAt))}
+										{fmtDateTime(s.createdAt)}
 									</p>
 								</div>
 

@@ -5,10 +5,11 @@ import { usePayment } from '../hooks/usePayment'
 import { useBackableState } from '../hooks/useBackableState'
 import { saveBlob, blobErrorMessage } from '../lib/download'
 import AutoRenewToggle from '../components/AutoRenewToggle'
+import { fmtDate } from '../lib/dateIST'
 
 function fmt(d) {
   if (!d) return '—'
-  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  return fmtDate(d)
 }
 
 function planNameOf(invoice) {
@@ -169,7 +170,7 @@ function InvoiceDetail({ invoice, onBack, paymentsEnabled, onPaid }) {
         )}
         {invoice.status === 'paid' && invoice.paidAt && (
           <p className="mt-2 text-xs" style={{ color: 'var(--color-accent)' }}>
-            ✓ Paid on {new Date(invoice.paidAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+            ✓ Paid on {fmtDate(invoice.paidAt)}
           </p>
         )}
       </div>
@@ -177,7 +178,7 @@ function InvoiceDetail({ invoice, onBack, paymentsEnabled, onPaid }) {
       <div className="flex flex-col p-5 card" style={{ gap: 0 }}>
         {[
           { label: 'Plan', value: planName },
-          { label: 'Invoice date', value: new Date(invoice.createdAt).toLocaleDateString('en-IN') },
+          { label: 'Invoice date', value: fmtDate(invoice.createdAt) },
           ...(invoice.discountAmount > 0 ? [
             { label: 'Price', value: `₹${invoice.listAmount?.toLocaleString('en-IN')}` },
             { label: `Discount${invoice.couponCode ? ` (${invoice.couponCode})` : ''}`, value: `− ₹${invoice.discountAmount?.toLocaleString('en-IN')}` },

@@ -8,11 +8,13 @@ import { useInstallPrompt } from '../context/InstallPromptContext'
 import IOSInstallSheet from '../components/IOSInstallSheet'
 import { useNotifications } from '../context/NotificationContext'
 import HydrationReminders from '../components/HydrationReminders'
+import LogSharingCard from '../components/LogSharingCard'
 import { useAnchorScroll } from '../hooks/useAnchorScroll'
 import { readCache, writeCache } from '../lib/offline'
 import { istDayName } from '../lib/dateIST'
 import { fingerprintLoginAvailable, registerFingerprint } from '../lib/webauthn'
 import { APP_VERSION } from '../version'
+import { fmtDate } from '../lib/dateIST'
 
 // Calendar-day key from a Date's LOCAL date parts — NOT toISOString(), which
 // gives the UTC date and silently shifts anything before ~5:30am IST onto
@@ -522,6 +524,8 @@ export default function Profile() {
       {/* ── Hydration reminders ── */}
       <HydrationReminders />
 
+      <LogSharingCard />
+
       {/* ── Attendance calendar ── */}
       <div id="attendance" className="p-5 card">
         <div className="flex items-center justify-between mb-4">
@@ -859,7 +863,7 @@ export default function Profile() {
                       <div>
                         <p className="text-sm font-medium" style={{ color: S.primary }}>{d.deviceName}</p>
                         <p className="text-[11px]" style={{ color: S.secondary }}>
-                          Added {new Date(d.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          Added {fmtDate(d.createdAt)}
                         </p>
                       </div>
                       <button onClick={() => handleRemoveFingerprint(d.credentialId)} className="text-xs" style={{ color: '#f87171' }}>

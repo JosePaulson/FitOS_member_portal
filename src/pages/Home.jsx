@@ -9,11 +9,12 @@ import WaiverBanner from '../components/WaiverBanner'
 import RenewCard from '../components/RenewCard'
 import { readCache, writeCache } from '../lib/offline'
 import { memberSince } from '../lib/membership'
+import { fmtDate } from '../lib/dateIST'
 
 function daysUntil(d) { return d ? Math.ceil((new Date(d) - new Date()) / 86400000) : null }
 function fmt(d) {
   if (!d) return '—'
-  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  return fmtDate(d)
 }
 
 // Average weight across a session's exercises — the effort level of that

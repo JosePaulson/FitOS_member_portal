@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { portalApi } from '../api/index'
 import Spinner from '../components/ui/Spinner'
+import { dialog } from '../components/ui/Dialog'
+import { fmtDate } from '../lib/dateIST'
 
 const S = { primary: 'var(--color-primary)', secondary: 'var(--color-secondary)', accent: 'var(--color-accent)', border: 'var(--color-border)' }
-const fmtDay = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+const fmtDay = (d) => fmtDate(`${d}T00:00:00Z`)
 
 export default function Challenges() {
   const [ov, setOv] = useState(null)
@@ -26,7 +28,7 @@ export default function Challenges() {
 
   async function setSettings(patch) {
     try { await portalApi.setEngagementSettings(patch); loadAll() }
-    catch (e) { alert(e.response?.data?.message || 'Couldn\u2019t save that.') }
+    catch (e) { dialog.error(e.response?.data?.message || 'Please try again in a moment.', { title: 'Couldn’t save that' }) }
   }
 
   if (error) return <p className="px-5 py-6 text-sm" style={{ color: '#f87171' }}>{error}</p>

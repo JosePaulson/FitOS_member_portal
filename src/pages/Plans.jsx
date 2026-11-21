@@ -4,8 +4,9 @@ import { portalApi, paymentApi } from '../api/index'
 import Spinner, { Badge, membershipBadge, EmptyState } from '../components/ui/Spinner'
 import { usePayment } from '../hooks/usePayment'
 import { membershipProgress } from '../lib/membership'
+import { fmtDate } from '../lib/dateIST'
 
-function fmt(d) { return d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '—' }
+function fmt(d) { return d ? fmtDate(d) : '—' }
 function daysUntil(d) { return d ? Math.ceil((new Date(d) - new Date()) / 86400000) : null }
 
 function Category({ label, children }) {

@@ -13,6 +13,7 @@
  * No per-node value labels regardless of mode — the two lines are
  * identified purely by color + the legend above the chart.
  */
+import { fmtDate } from '../lib/dateIST'
 function smoothPath(coords) {
   if (coords.length < 2) return ''
   if (coords.length === 2) {
@@ -124,8 +125,8 @@ export default function StrengthEnduranceChart({ points, emptyMessage, curved = 
 
       {footer && (
         <div className="flex justify-between mt-1 text-[10px]" style={{ color: 'var(--color-secondary)' }}>
-          <span>{new Date(first.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
-          <span>{new Date(last.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+          <span>{fmtDate(first.date)}</span>
+          <span>{fmtDate(last.date)}</span>
         </div>
       )}
     </div>

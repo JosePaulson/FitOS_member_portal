@@ -5,6 +5,8 @@ import { useMemberAuth } from '../context/MemberAuthContext'
 import { isMemberActive } from '../lib/membership'
 import PremiumLocked from '../components/PremiumLocked'
 import { toISTInputValue, parseISTInputValue, fmtISTDateTime, fmtISTTime, istDateKey, todayISTKey } from '../lib/dateIST'
+import { fmtDate } from '../lib/dateIST'
+import { DateTimeInput } from '../components/ui/DateInput'
 
 const MEAL_TYPES = [
   { value: 'Breakfast', icon: '🍳' },
@@ -24,7 +26,7 @@ function dayLabel(dateKey) {
 }
 function fmtGroupDate(dateKey) {
   const [y, m, d] = dateKey.split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-IN', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' })
+  return fmtDate(Date.UTC(y, m - 1, d))
 }
 
 export default function MealLog() {
@@ -265,7 +267,7 @@ function AddMealModal({ onClose, onAdded }) {
 
         <div className="mb-4">
           <label className="text-xs font-semibold mb-1.5 block" style={{ color: 'var(--color-secondary)' }}>Date & time</label>
-          <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} max={toISTInputValue(new Date())}
+          <DateTimeInput value={when} onChange={(e) => setWhen(e.target.value)} max={toISTInputValue(new Date())}
             className="w-full rounded-lg px-3 py-2.5 text-sm outline-none"
             style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-primary)' }} />
           <p className="text-[10px] mt-1" style={{ color: 'var(--color-secondary)' }}>Auto-filled with now — change it if you're logging a past meal.</p>

@@ -11,6 +11,8 @@ import { useDragReorder } from '../hooks/useDragReorder'
 import { toISTInputValue, parseISTInputValue, fmtISTDateTime } from '../lib/dateIST'
 import { useMemberAuth } from '../context/MemberAuthContext'
 import { loadWorkoutDraft, saveWorkoutDraft, clearWorkoutDraft, workoutDraftHasContent } from '../lib/workoutDraft'
+import { fmtDate, fmtDateTime } from '../lib/dateIST'
+import { DateTimeInput } from './ui/DateInput'
 
 // Exercises were keyed by their array index in the list below, which is
 // exactly the wrong key for a reorderable list: on every drag, React sees
@@ -189,7 +191,7 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
           <div className="flex items-center justify-between gap-3 px-3 py-2.5 mb-3 text-xs rounded-lg"
             style={{ background: 'rgba(200,241,53,0.06)', border: '1px solid rgba(200,241,53,0.25)' }}>
             <span style={{ color: 'var(--color-primary)' }}>
-              📝 You have an unsaved workout from {new Date(draft.savedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.
+              📝 You have an unsaved workout from {fmtDateTime(draft.savedAt)}.
             </span>
             <div className="flex gap-3 shrink-0">
               <button type="button" onClick={restoreDraft} className="font-semibold" style={{ color: 'var(--color-accent)' }}>Restore</button>
@@ -205,7 +207,7 @@ export function WorkoutLogFormModal({ initial, history, onClose, onSaved }) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <LabeledInput label="Date & time">
-              <input type="datetime-local" value={form.when} onChange={set('when')} className="field-input" />
+              <DateTimeInput value={form.when} onChange={set('when')} className="field-input" />
             </LabeledInput>
             <LabeledInput label="Duration (min)">
               <input type="number" min="5" step="5" value={form.durationMinutes} onChange={set('durationMinutes')} className="field-input" />

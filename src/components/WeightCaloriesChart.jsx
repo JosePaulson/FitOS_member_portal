@@ -17,6 +17,7 @@
  * No per-node value labels regardless of mode — the two lines are
  * identified purely by color + the legend above the chart.
  */
+import { fmtDate } from '../lib/dateIST'
 const CALORIES_COLOR = '#c2410c'
 
 // Catmull-Rom → cubic Bezier conversion, tension 1/6 (a standard default).
@@ -138,8 +139,8 @@ export default function WeightCaloriesChart({ points, emptyMessage, curved = fal
 
       {footer && (
         <div className="flex justify-between mt-1 text-[10px]" style={{ color: 'var(--color-secondary)' }}>
-          <span>{new Date(first.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
-          <span>{new Date(last.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+          <span>{fmtDate(first.date)}</span>
+          <span>{fmtDate(last.date)}</span>
         </div>
       )}
     </div>

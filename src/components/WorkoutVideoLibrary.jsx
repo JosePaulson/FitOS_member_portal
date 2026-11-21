@@ -84,6 +84,14 @@ export default function WorkoutVideoLibrary({ onClose }) {
   const [restLeft, setRestLeft] = useState(restDuration)
   const [completed, setCompleted] = useState(() => new Set())
 
+  // Auto-logging into the member's workout logs. One log per category per
+  // sitting (titled with the category, e.g. "Chest"): created on the first
+  // logged exercise, then updated as more are completed, and finally gets
+  // the member's body weight from the end-of-session prompt.
+  // sessionLogs.current[categoryKey] = { id, startedAt, entries: Map(exerciseName -> entry) }
+  const sessionLogs = useRef({})
+  const [logSheetOpen, setLogSheetOpen] = useState(false)
+
   // Transport-control visibility — the play/pause button fades out ~1s
   // after it's tapped (while playing), and any tap on the player brings
   // it back. Paused always stays visible so there's always a way back in.
@@ -134,8 +142,10 @@ export default function WorkoutVideoLibrary({ onClose }) {
     setPhase('exercise')
     setPlaying(false)
     setShowControls(true)
+    setLogSheetOpen(false)
     clearRestTimer()
     clearHideTimer()
+    if (group) delete sessionLogs.current[group] // entering a category starts a fresh workout log
   }, [group])
 
   function swapVariant() {
@@ -254,11 +264,53 @@ export default function WorkoutVideoLibrary({ onClose }) {
     }
   }
 
+  // "Mark complete" asks for reps / sets / weight first; the rest timer
+  // starts once the sheet is saved or skipped.
   function markComplete() {
     if (!currentGroup) return
+    setPlaying(false)
+    setLogSheetOpen(true)
+  }
+
+  function finishComplete() {
+    if (!currentGroup) return
+    setLogSheetOpen(false)
     setCompleted((prev) => new Set(prev).add(currentGroup.name))
     setPlaying(false)
     setPhase('resting')
+  }
+
+  const categoryLabel = MUSCLE_GROUPS.find((g) => g.key === group)?.label || group || 'Workout'
+
+  function sessionFor(key) {
+    return (sessionLogs.current[key] ||= { id: null, startedAt: Date.now(), entries: new Map() })
+  }
+  const elapsedMinutes = (sess) => Math.max(5, Math.round((Date.now() - sess.startedAt) / 60000))
+
+  async function saveExerciseLog({ reps, sets, weight }) {
+    const sess = sessionFor(group)
+    sess.entries.set(currentGroup.name, { name: currentGroup.name, reps, sets, weight, muscleGroup: group })
+    const payload = { exercises: [...sess.entries.values()], durationMinutes: elapsedMinutes(sess) }
+    if (!sess.id) {
+      const { data } = await portalApi.logWorkout({ ...payload, title: categoryLabel, date: new Date().toISOString() })
+      sess.id = data._id
+    } else {
+      await portalApi.updateWorkoutLog(sess.id, payload)
+    }
+    finishComplete()
+  }
+
+  // End-of-session body weight (kg). It goes onto this session's workout log
+  // when one exists. If every exercise was skipped there is no log, and a log
+  // with no exercises would be meaningless — so the weight is saved as a plain
+  // body measurement instead (it still shows in the weight progress graph).
+  async function saveBodyWeight(kg) {
+    const sess = sessionLogs.current[group]
+    if (sess?.id) {
+      await portalApi.updateWorkoutLog(sess.id, { bodyWeight: kg, durationMinutes: elapsedMinutes(sess) })
+    } else {
+      await portalApi.addMeasurement({ weightKg: kg, date: new Date().toISOString() })
+    }
   }
 
   function skipRest() {
@@ -285,6 +337,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
   }
 
   function replayGroup() {
+    delete sessionLogs.current[group] // a replay is a new workout log
     setIndex(0)
     setVariantIndex(0)
     setPhase('exercise')
@@ -303,6 +356,17 @@ export default function WorkoutVideoLibrary({ onClose }) {
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-black">
+      {logSheetOpen && currentGroup && (
+        <ExerciseLogSheet
+          exerciseName={currentGroup.name}
+          categoryLabel={categoryLabel}
+          initial={sessionLogs.current[group]?.entries.get(currentGroup.name)}
+          onSave={saveExerciseLog}
+          onSkip={finishComplete}
+          onClose={() => setLogSheetOpen(false)}
+        />
+      )}
+
       {/* Top bar — close + category chips, floats over the video with a
           gradient scrim so it stays legible over any footage. */}
       <div
@@ -481,6 +545,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
                 groups={MUSCLE_GROUPS.filter((g) => (videosByCategory[g.key] || []).length > 0)}
                 currentGroup={group}
                 onPickGroup={pickGroup}
+                onSaveWeight={saveBodyWeight}
               />
             )}
           </>
@@ -608,37 +673,177 @@ function RestAdjustButton({ label, onClick, disabled }) {
 }
 
 /* ── Group complete overlay ───────────────────────────────────────────────── */
-function GroupCompleteOverlay({ groupLabel, count, onReplay, onClose, groups, currentGroup, onPickGroup }) {
+function GroupCompleteOverlay({ groupLabel, count, onReplay, onClose, groups, currentGroup, onPickGroup, onSaveWeight }) {
   const nextGroup = groups[(groups.findIndex((g) => g.key === currentGroup) + 1) % groups.length]
+  const [kg, setKg] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+
+  async function saveWeight() {
+    const n = Number(kg)
+    if (!(n >= 20 && n <= 400)) { setError('Enter your weight in kg (20–400).'); return }
+    setSaving(true); setError('')
+    try { await onSaveWeight(n); setSaved(true) }
+    catch (err) { setError(err.response?.data?.message || 'Could not save weight. Try again.') }
+    finally { setSaving(false) }
+  }
+
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center" style={{ background: 'rgba(13,13,13,0.92)' }}>
-      <span className="text-5xl">🎉</span>
-      <div>
-        <p className="text-lg font-bold" style={{ color: '#fff' }}>{groupLabel} complete!</p>
-        <p className="mt-1 text-xs" style={{ color: 'rgba(255,255,255,0.65)' }}>You finished all {count} exercises.</p>
+    <div className="absolute inset-0 overflow-y-auto" style={{ background: 'rgba(13,13,13,0.92)' }}>
+      <div className="flex flex-col items-center justify-center min-h-full gap-4 px-6 py-8 text-center">
+        <span className="text-5xl">🎉</span>
+        <div>
+          <p className="text-lg font-bold" style={{ color: '#fff' }}>{groupLabel} complete!</p>
+          <p className="mt-1 text-xs" style={{ color: 'rgba(255,255,255,0.65)' }}>You finished all {count} exercises.</p>
+        </div>
+
+        {/* Body-weight prompt — saved onto this session's workout log */}
+        <div className="w-full max-w-xs p-3 text-left rounded-xl" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)' }}>
+          <p className="text-xs font-semibold" style={{ color: '#fff' }}>⚖️ Log your weight</p>
+          {saved ? (
+            <p className="mt-2 text-xs font-semibold" style={{ color: S.accent }}>✓ Saved — {Number(kg)} kg</p>
+          ) : (
+            <>
+              <div className="flex gap-2 mt-2">
+                <input
+                  type="number" inputMode="decimal" min="20" max="400" step="0.1"
+                  value={kg} onChange={(e) => setKg(e.target.value)} placeholder="e.g. 72.5"
+                  className="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg outline-none"
+                  style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff' }}
+                />
+                <span className="self-center text-xs" style={{ color: 'rgba(255,255,255,0.6)' }}>kg</span>
+                <button onClick={saveWeight} disabled={saving || !kg}
+                  className="px-4 text-xs font-bold rounded-lg disabled:opacity-50"
+                  style={{ background: S.accent, color: '#0D0D0D' }}>
+                  {saving ? '…' : 'Save'}
+                </button>
+              </div>
+              {error && <p className="mt-1.5 text-[11px]" style={{ color: '#f87171' }}>{error}</p>}
+            </>
+          )}
+        </div>
+
+        <div className="flex flex-col w-full max-w-xs gap-2">
+          <button
+            onClick={() => onPickGroup(nextGroup.key)}
+            className="py-2.5 text-sm font-bold rounded-xl"
+            style={{ background: S.accent, color: '#0D0D0D' }}
+          >
+            Try {nextGroup.label} next
+          </button>
+          <button
+            onClick={onReplay}
+            className="py-2.5 text-sm font-semibold rounded-xl"
+            style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }}
+          >
+            Replay {groupLabel}
+          </button>
+          <button
+            onClick={onClose}
+            className="py-2.5 text-sm font-semibold rounded-xl"
+            style={{ color: 'rgba(255,255,255,0.6)' }}
+          >
+            Exit
+          </button>
+        </div>
       </div>
-      <div className="flex flex-col w-full max-w-xs gap-2 mt-2">
-        <button
-          onClick={() => onPickGroup(nextGroup.key)}
-          className="py-2.5 text-sm font-bold rounded-xl"
-          style={{ background: S.accent, color: '#0D0D0D' }}
-        >
-          Try {nextGroup.label} next
+    </div>
+  )
+}
+
+/* ── Reps / sets / weight bottom sheet ────────────────────────────────────── */
+const REP_PILLS = [8, 10, 12, 15]
+const SET_PILLS = [1, 2, 3]
+const WEIGHT_PILLS = [1, 1.5, 2, 2.5, 3, 4, 5, 7.5]
+
+function ExerciseLogSheet({ exerciseName, categoryLabel, initial, onSave, onSkip, onClose }) {
+  const [reps, setReps] = useState(initial?.reps ?? '')
+  const [sets, setSets] = useState(initial?.sets !== undefined ? String(initial.sets) : '')
+  const [weight, setWeight] = useState(initial?.weight !== undefined ? String(initial.weight) : '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const hasAny = reps !== '' || sets !== '' || weight !== ''
+
+  async function submit() {
+    if (!hasAny) return
+    setSaving(true); setError('')
+    try {
+      await onSave({
+        reps: reps !== '' ? String(reps) : undefined,
+        sets: sets !== '' ? Number(sets) : undefined,
+        weight: weight !== '' ? Number(weight) : undefined,
+      })
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not save. Try again, or skip logging.')
+      setSaving(false)
+    }
+  }
+
+  const fieldStyle = { background: S.surface2, border: `1px solid ${S.border}`, color: S.primary }
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-end justify-center px-0 sm:items-center sm:px-4" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="relative w-full p-5 overflow-y-auto sm:max-w-sm rounded-t-2xl sm:rounded-2xl animate-fade-up max-h-[92vh]"
+        style={{ background: 'var(--color-surface)', border: `1px solid ${S.border}`, paddingBottom: 'calc(20px + env(safe-area-inset-bottom, 0px))' }}
+        onClick={(e) => e.stopPropagation()}>
+        <button onClick={onClose} aria-label="Close" className="absolute text-2xl leading-none top-4 right-5" style={{ color: S.secondary }}>×</button>
+
+        <h2 className="pr-8 text-lg font-bold" style={{ color: S.primary }}>{exerciseName}</h2>
+        <p className="mt-0.5 mb-4 text-xs" style={{ color: S.secondary }}>Saved to your “{categoryLabel}” workout log</p>
+
+        {error && (
+          <p className="px-3 py-2 mb-4 text-sm rounded-lg" style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)', color: '#f87171' }}>
+            {error}
+          </p>
+        )}
+
+        <PillField label="Reps" value={reps} onChange={setReps} pills={REP_PILLS}
+          inputProps={{ type: 'number', inputMode: 'numeric', min: 1, max: 100, step: 1, placeholder: 'e.g. 10' }} fieldStyle={fieldStyle} />
+        <PillField label="Sets" value={sets} onChange={setSets} pills={SET_PILLS}
+          inputProps={{ type: 'number', inputMode: 'numeric', min: 1, max: 20, step: 1, placeholder: 'e.g. 3' }} fieldStyle={fieldStyle} />
+        <PillField label="Weight (kg)" value={weight} onChange={setWeight} pills={WEIGHT_PILLS}
+          inputProps={{ type: 'number', inputMode: 'decimal', min: 0, max: 500, step: 0.5, placeholder: 'e.g. 2.5' }} fieldStyle={fieldStyle} />
+
+        <button onClick={submit} disabled={saving || !hasAny}
+          className="w-full py-2.5 mt-1 text-sm font-bold transition-all rounded-lg disabled:opacity-50"
+          style={{ background: S.accent, color: '#0D0D0D' }}>
+          {saving ? 'Saving…' : 'Save & rest'}
         </button>
-        <button
-          onClick={onReplay}
-          className="py-2.5 text-sm font-semibold rounded-xl"
-          style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }}
-        >
-          Replay {groupLabel}
+        <button onClick={onSkip} disabled={saving}
+          className="w-full py-2 mt-1.5 text-xs font-semibold disabled:opacity-50"
+          style={{ color: S.secondary }}>
+          Skip logging
         </button>
-        <button
-          onClick={onClose}
-          className="py-2.5 text-sm font-semibold rounded-xl"
-          style={{ color: 'rgba(255,255,255,0.6)' }}
-        >
-          Exit
-        </button>
+      </div>
+    </div>
+  )
+}
+
+// One labelled number input with quick-pick value pills beneath it — tapping a
+// pill fills the input above (and the matching pill highlights).
+function PillField({ label, value, onChange, pills, inputProps, fieldStyle }) {
+  return (
+    <div className="mb-4">
+      <label className="block mb-1.5 text-xs font-semibold" style={{ color: S.secondary }}>{label}</label>
+      <input {...inputProps} value={value} onChange={(e) => onChange(e.target.value)}
+        className="w-full px-3 py-2.5 text-sm rounded-lg outline-none" style={fieldStyle} />
+      <div className="flex flex-wrap gap-1.5 mt-2">
+        {pills.map((p) => {
+          const active = value !== '' && Number(value) === p
+          return (
+            <button key={p} type="button" onClick={() => onChange(String(p))}
+              className="px-3 py-1 text-xs font-semibold transition-all rounded-full"
+              style={{
+                background: active ? 'rgba(200,241,53,0.12)' : S.surface2,
+                border: active ? `1px solid ${S.accent}` : `1px solid ${S.border}`,
+                color: active ? S.accent : S.secondary,
+              }}>
+              {p}
+            </button>
+          )
+        })}
       </div>
     </div>
   )
