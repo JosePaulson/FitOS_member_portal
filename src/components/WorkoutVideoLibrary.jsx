@@ -1,12 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { portalApi } from '../api/index'
 import { useExerciseCatalog } from '../hooks/useExerciseCatalog'
+import { computeBestPR, formatBestPR, beatsPR } from '../lib/exercisePR'
+import { useMemberAuth } from '../context/MemberAuthContext'
+import {
+  loadVideoDraft, saveVideoDraft, clearVideoDraft, submitVideoDraft, newSessionId, VIDEO_DRAFT_CLEARED_EVENT,
+} from '../lib/videoWorkoutDraft'
+import WorkoutLogPrompt from './WorkoutLogPrompt'
+import { restBeeper } from '../lib/restBeep'
 
 const REST_DEFAULT_SECONDS = 45
 const REST_MIN_SECONDS = 30
 const REST_MAX_SECONDS = 180
 const REST_DURATION_STORAGE_KEY = 'fitos_member_rest_duration'
 const CONTROLS_HIDE_MS = 1000
+// Idle fade: this long after the last play/pause/touch the exercise info
+// (name, PR, notes) and the category chips dim so the video isn't covered.
+const UI_FADE_MS = 3000
+const INFO_FADED_OPACITY = 0.15
+const CHIPS_FADED_OPACITY = 0.25
 
 function clampRestDuration(value) {
   return Math.min(REST_MAX_SECONDS, Math.max(REST_MIN_SECONDS, value))
@@ -32,6 +44,10 @@ const S = {
   surface3: 'var(--color-surface-3)',
 }
 
+// Completed exercises are keyed `${categoryKey}::${exerciseName}` so the same
+// name in two categories can't collide now that one sitting spans several.
+const doneKey = (key, name) => `${key}::${name}`
+
 const RING_RADIUS = 54
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
 
@@ -44,6 +60,8 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
  */
 export default function WorkoutVideoLibrary({ onClose }) {
   const { muscleGroups: MUSCLE_GROUPS, loading: catalogLoading } = useExerciseCatalog()
+  const { member } = useMemberAuth()
+  const memberId = member?.id ?? member?._id // login returns `id`, /me returns `_id`
 
   // Videos, keyed by category — sourced from the gym's Workout Library
   // (admin-managed), so this stays in sync with whatever categories and
@@ -79,24 +97,80 @@ export default function WorkoutVideoLibrary({ onClose }) {
   // two separate steps, switchable via the "Swap" pill.
   const [variantIndex, setVariantIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
-  const [phase, setPhase] = useState('exercise') // exercise | resting | group-complete
+  const [phase, setPhase] = useState('exercise') // exercise | resting
   const [restDuration, setRestDuration] = useState(() => readStoredRestDuration())
   const [restLeft, setRestLeft] = useState(restDuration)
-  const [completed, setCompleted] = useState(() => new Set())
-
-  // Auto-logging into the member's workout logs. One log per category per
-  // sitting (titled with the category, e.g. "Chest"): created on the first
-  // logged exercise, then updated as more are completed, and finally gets
-  // the member's body weight from the end-of-session prompt.
-  // sessionLogs.current[categoryKey] = { id, startedAt, entries: Map(exerciseName -> entry) }
-  const sessionLogs = useRef({})
+  // Nothing is logged automatically. Every exercise the member LOGS (reps /
+  // sets / weight saved — "Skip logging" exercises are never recorded) goes
+  // into this sitting's session, which is mirrored to localStorage after each
+  // one, so closing the app, a dead phone or a crash loses nothing and it all
+  // works offline. It becomes a real workout log only when the member taps
+  // "Log workout" — in the close prompt, or in the "Unfinished workout"
+  // prompt on the next app open. The server then creates the day's log or
+  // appends to the existing one.
+  // session.current = { sessionId, startedAt, lastActivityAt,
+  //                     entries: Map(`${categoryKey}::${exerciseName}` -> entry) }
+  // An unfinished session saved on this device is picked up straight away
+  // (e.g. after "Continue workout" on app open): its exercises show as ✓ Done
+  // and are logged together with whatever is completed from here.
+  const [initialSession] = useState(() => {
+    const d = loadVideoDraft(memberId)
+    if (!d) return null
+    const entries = new Map()
+    for (const e of d.exercises) {
+      entries.set(doneKey(e.muscleGroup, e.name), { name: e.name, reps: e.reps, sets: e.sets, weight: e.weight, muscleGroup: e.muscleGroup })
+    }
+    return { sessionId: d.sessionId, startedAt: d.startedAt, lastActivityAt: d.lastActivityAt, entries }
+  })
+  const session = useRef(initialSession)
+  const [completed, setCompleted] = useState(() => new Set(initialSession ? initialSession.entries.keys() : []))
+  const [closePromptOpen, setClosePromptOpen] = useState(false)
   const [logSheetOpen, setLogSheetOpen] = useState(false)
+
+  // The app-open prompt (Layout) logged or discarded this same session while
+  // the player was already open — drop our copy so it can't be logged twice.
+  useEffect(() => {
+    const reset = () => { session.current = null; setCompleted(new Set()) }
+    window.addEventListener(VIDEO_DRAFT_CLEARED_EVENT, reset)
+    return () => window.removeEventListener(VIDEO_DRAFT_CLEARED_EVENT, reset)
+  }, [])
+
+  // Past logs + PT sessions, used for the PR shown under the video and in
+  // the reps/sets/weight sheet. Fetched once; it never includes this
+  // sitting's own log (that's created later), so "PR" always means "best
+  // before today's lift".
+  const [prHistory, setPrHistory] = useState([])
+  useEffect(() => {
+    let cancelled = false
+    Promise.allSettled([
+      portalApi.workoutLogs({ limit: 500 }),
+      portalApi.ptSessions({ limit: 200 }),
+    ]).then(([logsRes, sessRes]) => {
+      if (cancelled) return
+      const logs = logsRes.status === 'fulfilled' ? (logsRes.value.data.logs || []) : []
+      const sessions = sessRes.status === 'fulfilled' ? (sessRes.value.data.sessions || []) : []
+      setPrHistory([...logs, ...sessions])
+    })
+    return () => { cancelled = true }
+  }, [])
 
   // Transport-control visibility — the play/pause button fades out ~1s
   // after it's tapped (while playing), and any tap on the player brings
   // it back. Paused always stays visible so there's always a way back in.
   const [showControls, setShowControls] = useState(true)
   const hideTimerRef = useRef(null)
+
+  // Idle fade of the exercise info + category chips. Any activity — play,
+  // pause, touch, touch-move, mouse, scroll, key — shows them in full and
+  // restarts a 3 s timer, after which they dim again. A tap that merely
+  // REVEALS dimmed UI must not also trigger what's under the finger (switch
+  // category, swap video): pointer-down notes whether it was dimmed first.
+  const [uiFaded, setUiFaded] = useState(false)
+  const uiFadedRef = useRef(false)
+  const uiTimerRef = useRef(null)
+  const lastPokeRef = useRef(0)
+  const tapRevealedRef = useRef(false)
+  const restEndsAtRef = useRef(0) // wall-clock end of the current rest — immune to background timer throttling
 
   // Buffering state for the current clip, and a live countdown of seconds
   // remaining in the (looping) clip — driven by the <video> element's own
@@ -113,8 +187,11 @@ export default function WorkoutVideoLibrary({ onClose }) {
   // catalog and the library have loaded.
   useEffect(() => {
     if (group || catalogLoading || videosLoading) return
+    // Resuming? Land on the category the member was last working on.
+    const lastKey = [...(session.current?.entries.values() || [])].map((e) => e.muscleGroup).filter(Boolean).at(-1)
+    const resumeKey = lastKey && (videosByCategory[lastKey] || []).length > 0 ? lastKey : null
     const firstWithVideos = MUSCLE_GROUPS.find((g) => (videosByCategory[g.key] || []).length > 0)
-    setGroup((firstWithVideos || MUSCLE_GROUPS[0])?.key || null)
+    setGroup(resumeKey || (firstWithVideos || MUSCLE_GROUPS[0])?.key || null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catalogLoading, videosLoading])
 
@@ -133,6 +210,10 @@ export default function WorkoutVideoLibrary({ onClose }) {
   const currentGroup = exerciseGroups[index]
   const current = currentGroup?.variants[variantIndex]
   const isLast = index >= exerciseGroups.length - 1
+  const currentPR = useMemo(
+    () => computeBestPR(prHistory, currentGroup?.name),
+    [prHistory, currentGroup?.name]
+  )
 
   // Reset to the first exercise (and first variant) whenever the muscle
   // group changes.
@@ -143,9 +224,8 @@ export default function WorkoutVideoLibrary({ onClose }) {
     setPlaying(false)
     setShowControls(true)
     setLogSheetOpen(false)
-    clearRestTimer()
+    cancelRest()
     clearHideTimer()
-    if (group) delete sessionLogs.current[group] // entering a category starts a fresh workout log
   }, [group])
 
   function swapVariant() {
@@ -181,6 +261,14 @@ export default function WorkoutVideoLibrary({ onClose }) {
 
   useEffect(() => clearHideTimer, [])
 
+  // Playing/pausing, a new exercise, a category change or entering/leaving
+  // rest all count as activity: show the info, then dim it 3 s later.
+  useEffect(() => { pokeUI(true) }, [playing, current?._id, group, phase])
+  useEffect(() => () => clearTimeout(uiTimerRef.current), [])
+
+  // Leaving the player silences any rest beeps still queued.
+  useEffect(() => () => restBeeper.stop(), [])
+
   function clearRestTimer() {
     if (timerRef.current) {
       clearInterval(timerRef.current)
@@ -200,6 +288,41 @@ export default function WorkoutVideoLibrary({ onClose }) {
     hideTimerRef.current = setTimeout(() => setShowControls(false), CONTROLS_HIDE_MS)
   }
 
+  // Show the exercise info / chips in full and start the 3 s countdown to dim them.
+  function pokeUI(force = false) {
+    const now = Date.now()
+    if (!force && !uiFadedRef.current && now - lastPokeRef.current < 120) return // throttle touchmove/mousemove floods
+    lastPokeRef.current = now
+    uiFadedRef.current = false
+    setUiFaded(false)
+    clearTimeout(uiTimerRef.current)
+    uiTimerRef.current = setTimeout(() => { uiFadedRef.current = true; setUiFaded(true) }, UI_FADE_MS)
+  }
+
+  // Pointer-down anywhere in the player: remember if this tap is only
+  // revealing dimmed UI, unlock rest-beep audio (needs a user gesture), and
+  // restart the fade timer.
+  function handleActivityStart() {
+    tapRevealedRef.current = uiFadedRef.current
+    restBeeper.unlock()
+    pokeUI(true)
+  }
+
+  // True (once) when the tap that triggered this click only revealed dimmed UI.
+  function consumeRevealTap() {
+    if (!tapRevealedRef.current) return false
+    tapRevealedRef.current = false
+    return true
+  }
+
+  // Rest cut short or abandoned (skip, prev/next, jump, category change) —
+  // stop the countdown AND the beeps. (A rest that runs out on its own only
+  // clears the timer, so the final long beep can finish.)
+  function cancelRest() {
+    clearRestTimer()
+    restBeeper.stop()
+  }
+
   // Tapping anywhere on the player always toggles play/pause AND brings
   // the button back into view (briefly, if now playing) — so the tap
   // always visibly does something, even right after the button had
@@ -215,24 +338,35 @@ export default function WorkoutVideoLibrary({ onClose }) {
     })
   }
 
-  // Rest countdown — ticks every second, auto-advances when it hits zero.
+  // Rest countdown. Driven by an END TIMESTAMP rather than by counting
+  // ticks, so it stays right when the browser throttles timers in a background
+  // tab — and it re-syncs the instant the app comes back to the foreground.
+  // The beeps for the last 4 s are baked into an audio clip (see lib/restBeep)
+  // that plays on the OS media pipeline, so they sound on time even with the
+  // app in the background, the screen locked, or another app open.
   useEffect(() => {
     if (phase !== 'resting') return
+    restEndsAtRef.current = Date.now() + restDuration * 1000
     setRestLeft(restDuration)
-    timerRef.current = setInterval(() => {
-      setRestLeft((t) => {
-        if (t <= 1) {
-          clearRestTimer()
-          advanceAfterRest()
-          return 0
-        }
-        return t - 1
-      })
-    }, 1000)
-    return clearRestTimer
+    restBeeper.start(restDuration, !isLast ? exerciseGroups[index + 1]?.name : null)
+
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((restEndsAtRef.current - Date.now()) / 1000))
+      setRestLeft(left)
+      if (left <= 0) {
+        clearRestTimer()
+        advanceAfterRest()
+      }
+    }
+    timerRef.current = setInterval(tick, 250)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      clearRestTimer()
+      document.removeEventListener('visibilitychange', tick)
+    }
     // Only re-run when entering/leaving the resting phase — mid-rest
-    // duration tweaks (adjustRest) update restLeft directly instead of
-    // restarting this effect, so they don't reset the countdown.
+    // duration tweaks (adjustRest) move the end timestamp directly instead
+    // of restarting this effect, so they don't reset the countdown.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
 
@@ -248,14 +382,23 @@ export default function WorkoutVideoLibrary({ onClose }) {
       return next
     })
     if (phase === 'resting') {
-      setRestLeft((t) => Math.max(0, Math.min(REST_MAX_SECONDS, t + deltaSeconds)))
+      const left = Math.max(0, Math.ceil((restEndsAtRef.current - Date.now()) / 1000))
+      const nextLeft = Math.max(0, Math.min(REST_MAX_SECONDS, left + deltaSeconds))
+      restEndsAtRef.current = Date.now() + nextLeft * 1000
+      setRestLeft(nextLeft)
+      // The beeps sit at fixed offsets from the end, so re-time the clip.
+      if (nextLeft > 0) restBeeper.start(nextLeft, !isLast ? exerciseGroups[index + 1]?.name : null)
+      else restBeeper.stop()
     }
   }
 
   function advanceAfterRest() {
     if (isLast) {
-      setPhase('group-complete')
+      // Last exercise of the category — no pop-up; stay on it. The member picks
+      // another category from the chips up top, or closes the player to log.
+      setPhase('exercise')
       setPlaying(false)
+      setShowControls(true)
     } else {
       setIndex((i) => i + 1)
       setVariantIndex(0)
@@ -275,52 +418,75 @@ export default function WorkoutVideoLibrary({ onClose }) {
   function finishComplete() {
     if (!currentGroup) return
     setLogSheetOpen(false)
-    setCompleted((prev) => new Set(prev).add(currentGroup.name))
+    setCompleted((prev) => new Set(prev).add(doneKey(group, currentGroup.name)))
     setPlaying(false)
     setPhase('resting')
   }
 
-  const categoryLabel = MUSCLE_GROUPS.find((g) => g.key === group)?.label || group || 'Workout'
+  const labelFor = (key) => MUSCLE_GROUPS.find((g) => g.key === key)?.label || key
 
-  function sessionFor(key) {
-    return (sessionLogs.current[key] ||= { id: null, startedAt: Date.now(), entries: new Map() })
+  function getSession() {
+    return (session.current ||= { sessionId: newSessionId(), startedAt: Date.now(), lastActivityAt: Date.now(), entries: new Map() })
   }
-  const elapsedMinutes = (sess) => Math.max(5, Math.round((Date.now() - sess.startedAt) / 60000))
 
-  async function saveExerciseLog({ reps, sets, weight }) {
-    const sess = sessionFor(group)
-    sess.entries.set(currentGroup.name, { name: currentGroup.name, reps, sets, weight, muscleGroup: group })
-    const payload = { exercises: [...sess.entries.values()], durationMinutes: elapsedMinutes(sess) }
-    if (!sess.id) {
-      const { data } = await portalApi.logWorkout({ ...payload, title: categoryLabel, date: new Date().toISOString() })
-      sess.id = data._id
-    } else {
-      await portalApi.updateWorkoutLog(sess.id, payload)
-    }
+  // What gets stored locally / sent to the server.
+  function draftSnapshot() {
+    const sess = session.current
+    const exercises = [...sess.entries.values()]
+    const labels = {}
+    for (const e of exercises) if (e.muscleGroup) labels[e.muscleGroup] = labelFor(e.muscleGroup)
+    return { sessionId: sess.sessionId, startedAt: sess.startedAt, lastActivityAt: sess.lastActivityAt, exercises, labels }
+  }
+
+  // Reps / sets / weight entered for the current exercise.
+  function saveExerciseLog({ reps, sets, weight }) {
+    const sess = getSession()
+    sess.entries.set(doneKey(group, currentGroup.name), { name: currentGroup.name, reps, sets, weight, muscleGroup: group })
+    sess.lastActivityAt = Date.now()
+    saveVideoDraft(memberId, draftSnapshot())
     finishComplete()
   }
 
-  // End-of-session body weight (kg). It goes onto this session's workout log
-  // when one exists. If every exercise was skipped there is no log, and a log
-  // with no exercises would be meaningless — so the weight is saved as a plain
-  // body measurement instead (it still shows in the weight progress graph).
-  async function saveBodyWeight(kg) {
-    const sess = sessionLogs.current[group]
-    if (sess?.id) {
-      await portalApi.updateWorkoutLog(sess.id, { bodyWeight: kg, durationMinutes: elapsedMinutes(sess) })
-    } else {
-      await portalApi.addMeasurement({ weightKg: kg, date: new Date().toISOString() })
-    }
+  // How many exercises have logged data — skipped ones aren't counted.
+  const loggedCount = () => session.current?.entries.size || 0
+
+  // ✕ — nothing logged (nothing done, or everything skipped) just closes;
+  // otherwise ask: log the workout, or keep going?
+  function requestClose() {
+    if (loggedCount() === 0) { onClose(); return }
+    setPlaying(false)
+    setClosePromptOpen(true)
+  }
+
+  // "Log workout": send the session to the server, which creates today's log
+  // or appends to the day's existing one. If it throws (offline, server error)
+  // the prompt shows it and the session stays safely on this device.
+  async function logWorkout(bodyWeight) {
+    await submitVideoDraft(memberId, draftSnapshot(), bodyWeight, { notify: false })
+    session.current = null // logged — never offer these exercises again
+    setCompleted(new Set())
+  }
+
+  function discardWorkout() {
+    clearVideoDraft(memberId, { notify: false })
+    session.current = null
+    onClose()
+  }
+
+  const loggedCategoryNames = () => {
+    const keys = []
+    for (const e of session.current?.entries.values() || []) if (e.muscleGroup && !keys.includes(e.muscleGroup)) keys.push(e.muscleGroup)
+    return keys.map(labelFor)
   }
 
   function skipRest() {
-    clearRestTimer()
+    cancelRest()
     advanceAfterRest()
   }
 
   function goPrev() {
     if (index === 0) return
-    clearRestTimer()
+    cancelRest()
     setPhase('exercise')
     setPlaying(false)
     setVariantIndex(0)
@@ -329,41 +495,56 @@ export default function WorkoutVideoLibrary({ onClose }) {
 
   function goNext() {
     if (isLast) return
-    clearRestTimer()
+    cancelRest()
     setPhase('exercise')
     setPlaying(false)
     setVariantIndex(0)
     setIndex((i) => i + 1)
   }
 
-  function replayGroup() {
-    delete sessionLogs.current[group] // a replay is a new workout log
-    setIndex(0)
-    setVariantIndex(0)
-    setPhase('exercise')
-    setPlaying(false)
-  }
-
+  // Top-bar category chips: jump straight to another category mid-workout.
+  // Everything completed so far stays in the same session.
   function pickGroup(key) {
     if (key === group) return
     setGroup(key)
   }
 
   const groupCompletedCount = useMemo(
-    () => exerciseGroups.filter((g) => completed.has(g.name)).length,
-    [exerciseGroups, completed]
+    () => exerciseGroups.filter((g) => completed.has(doneKey(group, g.name))).length,
+    [exerciseGroups, completed, group]
   )
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-black">
+    <div
+      className="fixed inset-0 z-[100] flex flex-col bg-black"
+      onPointerDownCapture={handleActivityStart}
+      onPointerMove={() => pokeUI()}
+      onTouchStart={() => pokeUI()}
+      onTouchMove={() => pokeUI()}
+      onMouseMove={() => pokeUI()}
+      onWheel={() => pokeUI()}
+      onKeyDown={() => { tapRevealedRef.current = false; pokeUI(true) }}
+    >
       {logSheetOpen && currentGroup && (
         <ExerciseLogSheet
           exerciseName={currentGroup.name}
-          categoryLabel={categoryLabel}
-          initial={sessionLogs.current[group]?.entries.get(currentGroup.name)}
+          pr={currentPR}
+          initial={session.current?.entries.get(doneKey(group, currentGroup.name))}
           onSave={saveExerciseLog}
           onSkip={finishComplete}
           onClose={() => setLogSheetOpen(false)}
+        />
+      )}
+
+      {closePromptOpen && (
+        <WorkoutLogPrompt
+          mode="close"
+          exerciseCount={loggedCount()}
+          categories={loggedCategoryNames()}
+          onLog={logWorkout}
+          onContinue={() => setClosePromptOpen(false)}
+          onDiscard={discardWorkout}
+          onLogged={onClose}
         />
       )}
 
@@ -371,14 +552,21 @@ export default function WorkoutVideoLibrary({ onClose }) {
           gradient scrim so it stays legible over any footage. */}
       <div
         className="absolute top-0 inset-x-0 z-20 flex flex-col gap-2.5 px-4 pb-6"
-        style={{
-          paddingTop: 'calc(10px + env(safe-area-inset-top, 0px))',
-          background: 'linear-gradient(to bottom, rgba(0,0,0,0.75), transparent)',
-        }}
+        style={{ paddingTop: 'calc(10px + env(safe-area-inset-top, 0px))' }}
       >
+        {/* Legibility scrim — eases off together with the chips when idle */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            zIndex: -1,
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.75), transparent)',
+            opacity: uiFaded ? CHIPS_FADED_OPACITY : 1,
+            transition: 'opacity 0.6s ease',
+          }}
+        />
         <div className="flex items-center justify-between">
           <button
-            onClick={onClose}
+            onClick={requestClose}
             aria-label="Close"
             className="flex items-center justify-center transition-all rounded-full w-9 h-9 active:scale-90"
             style={{ background: 'rgba(255,255,255,0.12)', color: '#fff', backdropFilter: 'blur(4px)' }}
@@ -391,13 +579,17 @@ export default function WorkoutVideoLibrary({ onClose }) {
             </span>
           )}
         </div>
-        <div className="flex gap-2 px-1 -mx-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+        <div
+          className="flex gap-2 px-1 -mx-1 overflow-x-auto"
+          style={{ scrollbarWidth: 'none', opacity: uiFaded ? CHIPS_FADED_OPACITY : 1, transition: 'opacity 0.6s ease' }}
+          onScroll={() => pokeUI()}
+        >
           {MUSCLE_GROUPS.map((g) => {
             const active = g.key === group
             return (
               <button
                 key={g.key}
-                onClick={() => pickGroup(g.key)}
+                onClick={() => { if (consumeRevealTap()) return; pickGroup(g.key) }}
                 className="px-3.5 py-1.5 text-xs font-semibold rounded-full whitespace-nowrap transition-all shrink-0"
                 style={active
                   ? { background: S.accent, color: '#0D0D0D' }
@@ -488,7 +680,11 @@ export default function WorkoutVideoLibrary({ onClose }) {
             {phase === 'exercise' && (
               <div
                 className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-2 px-5 pt-10 pb-4 pointer-events-none"
-                style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)' }}
+                style={{
+                  background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)',
+                  opacity: uiFaded ? INFO_FADED_OPACITY : 1,
+                  transition: 'opacity 0.6s ease',
+                }}
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -498,7 +694,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
                     )}
                     {currentGroup?.variants.length > 1 && (
                       <button
-                        onClick={swapVariant}
+                        onClick={() => { if (consumeRevealTap()) return; swapVariant() }}
                         className="pointer-events-auto text-[11px] font-bold px-2.5 py-1 rounded-full transition-all active:scale-95"
                         style={{ background: 'rgba(168,85,247,0.25)', color: '#fff', backdropFilter: 'blur(4px)' }}
                         aria-label="Switch to the other video for this exercise"
@@ -507,7 +703,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
                       </button>
                     )}
                   </div>
-                  {completed.has(currentGroup?.name) && (
+                  {completed.has(doneKey(group, currentGroup?.name)) && (
                     <span
                       className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full"
                       style={{ background: 'rgba(200,241,53,0.18)', color: S.accent, border: '1px solid rgba(200,241,53,0.3)' }}
@@ -516,6 +712,14 @@ export default function WorkoutVideoLibrary({ onClose }) {
                     </span>
                   )}
                 </div>
+                {currentPR && (
+                  <span
+                    className="self-start flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full"
+                    style={{ background: 'rgba(168,85,247,0.25)', color: '#fff', border: '1px solid rgba(168,85,247,0.45)', backdropFilter: 'blur(4px)' }}
+                  >
+                    🏆 PR {formatBestPR(currentPR)}
+                  </span>
+                )}
                 {current.description && (
                   <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.75)' }}>{current.description}</p>
                 )}
@@ -535,19 +739,6 @@ export default function WorkoutVideoLibrary({ onClose }) {
               />
             )}
 
-            {/* Group complete overlay */}
-            {phase === 'group-complete' && (
-              <GroupCompleteOverlay
-                groupLabel={MUSCLE_GROUPS.find((g) => g.key === group)?.label}
-                count={exerciseGroups.length}
-                onReplay={replayGroup}
-                onClose={onClose}
-                groups={MUSCLE_GROUPS.filter((g) => (videosByCategory[g.key] || []).length > 0)}
-                currentGroup={group}
-                onPickGroup={pickGroup}
-                onSaveWeight={saveBodyWeight}
-              />
-            )}
           </>
         )}
       </div>
@@ -567,12 +758,12 @@ export default function WorkoutVideoLibrary({ onClose }) {
             {exerciseGroups.map((g, i) => (
               <button
                 key={g.name}
-                onClick={() => { clearRestTimer(); setPhase('exercise'); setPlaying(false); setShowControls(true); setVariantIndex(0); setIndex(i) }}
+                onClick={() => { cancelRest(); setPhase('exercise'); setPlaying(false); setShowControls(true); setVariantIndex(0); setIndex(i) }}
                 className="transition-all rounded-full"
                 style={{
                   width: i === index ? 18 : 6,
                   height: 6,
-                  background: completed.has(g.name) ? S.accent : i === index ? S.primary : S.border,
+                  background: completed.has(doneKey(group, g.name)) ? S.accent : i === index ? S.primary : S.border,
                 }}
                 aria-label={`Go to exercise ${i + 1}`}
               />
@@ -594,7 +785,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
               className="flex-1 py-2.5 text-xs font-bold rounded-xl transition-all active:scale-[0.98]"
               style={{ background: S.accent, color: '#0D0D0D', boxShadow: '0 6px 16px rgba(200,241,53,0.25)' }}
             >
-              {completed.has(currentGroup?.name) ? '✓ Completed — rest again' : `Mark complete · rest ${restDuration}s`}
+              {completed.has(doneKey(group, currentGroup?.name)) ? '✓ Completed — rest again' : `Mark complete · rest ${restDuration}s`}
             </button>
             <button
               onClick={goNext}
@@ -609,6 +800,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
 
           <p className="text-[11px] text-center" style={{ color: S.secondary }}>
             {groupCompletedCount} of {exerciseGroups.length} {MUSCLE_GROUPS.find((g) => g.key === group)?.label.toLowerCase()} exercises done
+            {groupCompletedCount === exerciseGroups.length ? ' · pick another category above, or close to finish' : ''}
           </p>
         </div>
       )}
@@ -672,92 +864,12 @@ function RestAdjustButton({ label, onClick, disabled }) {
   )
 }
 
-/* ── Group complete overlay ───────────────────────────────────────────────── */
-function GroupCompleteOverlay({ groupLabel, count, onReplay, onClose, groups, currentGroup, onPickGroup, onSaveWeight }) {
-  const nextGroup = groups[(groups.findIndex((g) => g.key === currentGroup) + 1) % groups.length]
-  const [kg, setKg] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [error, setError] = useState('')
-
-  async function saveWeight() {
-    const n = Number(kg)
-    if (!(n >= 20 && n <= 400)) { setError('Enter your weight in kg (20–400).'); return }
-    setSaving(true); setError('')
-    try { await onSaveWeight(n); setSaved(true) }
-    catch (err) { setError(err.response?.data?.message || 'Could not save weight. Try again.') }
-    finally { setSaving(false) }
-  }
-
-  return (
-    <div className="absolute inset-0 overflow-y-auto" style={{ background: 'rgba(13,13,13,0.92)' }}>
-      <div className="flex flex-col items-center justify-center min-h-full gap-4 px-6 py-8 text-center">
-        <span className="text-5xl">🎉</span>
-        <div>
-          <p className="text-lg font-bold" style={{ color: '#fff' }}>{groupLabel} complete!</p>
-          <p className="mt-1 text-xs" style={{ color: 'rgba(255,255,255,0.65)' }}>You finished all {count} exercises.</p>
-        </div>
-
-        {/* Body-weight prompt — saved onto this session's workout log */}
-        <div className="w-full max-w-xs p-3 text-left rounded-xl" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)' }}>
-          <p className="text-xs font-semibold" style={{ color: '#fff' }}>⚖️ Log your weight</p>
-          {saved ? (
-            <p className="mt-2 text-xs font-semibold" style={{ color: S.accent }}>✓ Saved — {Number(kg)} kg</p>
-          ) : (
-            <>
-              <div className="flex gap-2 mt-2">
-                <input
-                  type="number" inputMode="decimal" min="20" max="400" step="0.1"
-                  value={kg} onChange={(e) => setKg(e.target.value)} placeholder="e.g. 72.5"
-                  className="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg outline-none"
-                  style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff' }}
-                />
-                <span className="self-center text-xs" style={{ color: 'rgba(255,255,255,0.6)' }}>kg</span>
-                <button onClick={saveWeight} disabled={saving || !kg}
-                  className="px-4 text-xs font-bold rounded-lg disabled:opacity-50"
-                  style={{ background: S.accent, color: '#0D0D0D' }}>
-                  {saving ? '…' : 'Save'}
-                </button>
-              </div>
-              {error && <p className="mt-1.5 text-[11px]" style={{ color: '#f87171' }}>{error}</p>}
-            </>
-          )}
-        </div>
-
-        <div className="flex flex-col w-full max-w-xs gap-2">
-          <button
-            onClick={() => onPickGroup(nextGroup.key)}
-            className="py-2.5 text-sm font-bold rounded-xl"
-            style={{ background: S.accent, color: '#0D0D0D' }}
-          >
-            Try {nextGroup.label} next
-          </button>
-          <button
-            onClick={onReplay}
-            className="py-2.5 text-sm font-semibold rounded-xl"
-            style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }}
-          >
-            Replay {groupLabel}
-          </button>
-          <button
-            onClick={onClose}
-            className="py-2.5 text-sm font-semibold rounded-xl"
-            style={{ color: 'rgba(255,255,255,0.6)' }}
-          >
-            Exit
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 /* ── Reps / sets / weight bottom sheet ────────────────────────────────────── */
 const REP_PILLS = [8, 10, 12, 15]
 const SET_PILLS = [1, 2, 3]
 const WEIGHT_PILLS = [1, 1.5, 2, 2.5, 3, 4, 5, 7.5]
 
-function ExerciseLogSheet({ exerciseName, categoryLabel, initial, onSave, onSkip, onClose }) {
+function ExerciseLogSheet({ exerciseName, pr, initial, onSave, onSkip, onClose }) {
   const [reps, setReps] = useState(initial?.reps ?? '')
   const [sets, setSets] = useState(initial?.sets !== undefined ? String(initial.sets) : '')
   const [weight, setWeight] = useState(initial?.weight !== undefined ? String(initial.weight) : '')
@@ -765,6 +877,7 @@ function ExerciseLogSheet({ exerciseName, categoryLabel, initial, onSave, onSkip
   const [error, setError] = useState('')
 
   const hasAny = reps !== '' || sets !== '' || weight !== ''
+  const newPR = beatsPR(pr, { weight, reps })
 
   async function submit() {
     if (!hasAny) return
@@ -791,7 +904,21 @@ function ExerciseLogSheet({ exerciseName, categoryLabel, initial, onSave, onSkip
         <button onClick={onClose} aria-label="Close" className="absolute text-2xl leading-none top-4 right-5" style={{ color: S.secondary }}>×</button>
 
         <h2 className="pr-8 text-lg font-bold" style={{ color: S.primary }}>{exerciseName}</h2>
-        <p className="mt-0.5 mb-4 text-xs" style={{ color: S.secondary }}>Saved to your “{categoryLabel}” workout log</p>
+        <p className="mt-0.5 mb-3 text-xs" style={{ color: S.secondary }}>Saved to your current workout — logged when you tap “Log workout”</p>
+
+        {/* Personal record from past workout logs + PT sessions — heaviest
+            weight (with its reps), or best reps when no weight was ever logged. */}
+        <div
+          className="flex items-center justify-between gap-2 px-3 py-2 mb-4 rounded-lg"
+          style={{ background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.3)' }}
+        >
+          <span className="text-xs font-bold" style={{ color: '#a855f7' }}>
+            {pr ? `🏆 PR ${formatBestPR(pr)}` : '🏆 No PR yet — this sets your first'}
+          </span>
+          {newPR && (
+            <span className="text-[11px] font-black" style={{ color: S.accent }}>🔥 New PR!</span>
+          )}
+        </div>
 
         {error && (
           <p className="px-3 py-2 mb-4 text-sm rounded-lg" style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)', color: '#f87171' }}>

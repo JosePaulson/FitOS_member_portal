@@ -5,6 +5,7 @@ import InstallPrompt from '../InstallPrompt'
 import GeofenceAttendancePrompt from '../GeofenceAttendancePrompt'
 import RateLimitWarning from '../RateLimitWarning'
 import MembershipExpiredModal from '../MembershipExpiredModal'
+import PendingWorkoutPrompt from '../PendingWorkoutPrompt'
 import NotificationBell from '../NotificationBell'
 import VideosFab from '../VideosFab'
 
@@ -74,6 +75,9 @@ export default function Layout() {
 
       {/* Membership-expired renewal reminder — once per app open */}
       <MembershipExpiredModal />
+
+      {/* Unlogged Workout Videos session kept on this device — continue / log / discard, once per app open */}
+      <PendingWorkoutPrompt />
 
       {/* Bottom tab bar — padded for the iOS home-indicator safe area */}
       <nav className="fixed bottom-0 z-40 grid w-full max-w-md grid-cols-5 -translate-x-1/2 left-1/2"

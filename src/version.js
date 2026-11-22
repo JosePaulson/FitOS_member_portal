@@ -9,9 +9,30 @@
 //   - Bug fixes / small tweaks / copy changes        → bump PATCH (last number)
 //
 // Changelog entries: newest first; `type` is 'feature' | 'improvement' | 'fix'.
-export const APP_VERSION = '2.0.3'
+export const APP_VERSION = '2.2.0'
 
 export const APP_CHANGELOG = [
+  {
+    version: '2.2.0',
+    type: 'feature',
+    notes: [
+      'Workout videos: while a video plays, the exercise name, personal record and notes fade out after 3 seconds (and the category chips dim), so nothing covers your form — touch the screen, or pause, to bring them back',
+      'Rest timer: a loud beep sounds in the last 4 seconds of every rest, even if the app is in the background, your screen is locked or you switched to another app (turn your media volume up)',
+      'The rest countdown now stays accurate while the app is in the background, and catches up the moment you come back',
+    ],
+  },
+  {
+    version: '2.1.0',
+    type: 'feature',
+    notes: [
+      'Workout videos: closing the player after logging exercises now asks whether to log your workout or continue — with an optional body-weight field',
+      'Exercises are logged only when you choose “Log workout”, and skipped exercises are never logged',
+      'One workout log per day: if you already have a log for the day, new exercises are added to it, and the workout is named after what you trained (for example “Chest/Shoulders”)',
+      'Unfinished video workouts are kept on your device — even with no internet — and when you next open the app you can continue, log or discard them',
+      'See your personal record (best weight, or best reps if you never logged a weight) under each video and when logging reps, sets and weight',
+      'Simpler flow: no pop-ups when you finish a category — switch categories any time from the chips at the top',
+    ],
+  },
   {
     version: '2.0.3',
     type: 'fix',

@@ -77,6 +77,8 @@ export const portalApi = {
   updateWorkoutLog: (id, data) => api.patch(`/member-portal/workout-logs/${id}`, data),
   deleteWorkoutLog: (id) => api.delete(`/member-portal/workout-logs/${id}`),
   bodyWeightProgress: () => api.get('/member-portal/workout-logs/progress/body-weight'),
+  // Finished Workout Videos session → today's log (created, or appended to the day's existing log)
+  logVideoWorkout: (data) => api.post('/member-portal/workout-logs/session', data),
   ptAcknowledge: (id) => api.post(`/member-portal/pt-sessions/${id}/acknowledge`),
   ptTrainers: () => api.get('/member-portal/pt-sessions/trainers'),
   ptAvailableSlots: (trainerId, date) => api.get('/member-portal/pt-sessions/available-slots', { params: { trainerId, date } }),
