@@ -8,17 +8,21 @@ import {
 } from '../lib/videoWorkoutDraft'
 import WorkoutLogPrompt from './WorkoutLogPrompt'
 import { restBeeper } from '../lib/restBeep'
+import warningIcon from '../assets/warningIcon' // data-URI module — works offline (see the file)
+import checklistIcon from '../assets/checklistIcon'
 
 const REST_DEFAULT_SECONDS = 45
 const REST_MIN_SECONDS = 30
 const REST_MAX_SECONDS = 180
 const REST_DURATION_STORAGE_KEY = 'fitos_member_rest_duration'
 const CONTROLS_HIDE_MS = 1000
-// Idle fade: this long after the last play/pause/touch the exercise info
-// (name, PR, notes) and the category chips dim so the video isn't covered.
+// While a video is PLAYING, the whole exercise info block (name, timer, PR and
+// the list / ⚠ icons) dims to 60% this long after the last touch so it's less
+// intrusive over the footage. Pausing, or any touch / touch-move, brings it
+// back to full strength. Nothing ever dims while the video is paused. The
+// category chips never dim.
 const UI_FADE_MS = 3000
-const INFO_FADED_OPACITY = 0.15
-const CHIPS_FADED_OPACITY = 0.25
+const INFO_FADED_OPACITY = 0.6
 
 function clampRestDuration(value) {
   return Math.min(REST_MAX_SECONDS, Math.max(REST_MIN_SECONDS, value))
@@ -160,16 +164,15 @@ export default function WorkoutVideoLibrary({ onClose }) {
   const [showControls, setShowControls] = useState(true)
   const hideTimerRef = useRef(null)
 
-  // Idle fade of the exercise info + category chips. Any activity — play,
-  // pause, touch, touch-move, mouse, scroll, key — shows them in full and
-  // restarts a 3 s timer, after which they dim again. A tap that merely
-  // REVEALS dimmed UI must not also trigger what's under the finger (switch
-  // category, swap video): pointer-down notes whether it was dimmed first.
+  // `uiFaded` = the exercise info block is dimmed to 60% (see UI_FADE_MS). It
+  // only ever turns on while the video is playing and the member hasn't touched the screen.
   const [uiFaded, setUiFaded] = useState(false)
   const uiFadedRef = useRef(false)
   const uiTimerRef = useRef(null)
   const lastPokeRef = useRef(0)
-  const tapRevealedRef = useRef(false)
+  const playingRef = useRef(false) // mirrors `playing && phase === 'exercise'` for the timer callbacks
+  const [notesOpen, setNotesOpen] = useState(false)
+  const [listOpen, setListOpen] = useState(false) // "workouts in this category" sheet
   const restEndsAtRef = useRef(0) // wall-clock end of the current rest — immune to background timer throttling
 
   // Buffering state for the current clip, and a live countdown of seconds
@@ -214,6 +217,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
     () => computeBestPR(prHistory, currentGroup?.name),
     [prHistory, currentGroup?.name]
   )
+  const hasNotes = !!current?.description?.trim() // notes/warnings live behind the ⚠ icon
 
   // Reset to the first exercise (and first variant) whenever the muscle
   // group changes.
@@ -261,9 +265,13 @@ export default function WorkoutVideoLibrary({ onClose }) {
 
   useEffect(() => clearHideTimer, [])
 
-  // Playing/pausing, a new exercise, a category change or entering/leaving
-  // rest all count as activity: show the info, then dim it 3 s later.
-  useEffect(() => { pokeUI(true) }, [playing, current?._id, group, phase])
+  // Play/pause, a new exercise, a category change or entering/leaving rest all
+  // count as activity: show everything — and, only if the video is playing,
+  // hide the name 3 s later.
+  useEffect(() => {
+    playingRef.current = playing && phase === 'exercise'
+    pokeUI(true)
+  }, [playing, current?._id, group, phase])
   useEffect(() => () => clearTimeout(uiTimerRef.current), [])
 
   // Leaving the player silences any rest beeps still queued.
@@ -288,7 +296,8 @@ export default function WorkoutVideoLibrary({ onClose }) {
     hideTimerRef.current = setTimeout(() => setShowControls(false), CONTROLS_HIDE_MS)
   }
 
-  // Show the exercise info / chips in full and start the 3 s countdown to dim them.
+  // Show everything in full; if the video is playing, start the 3 s countdown
+  // to hiding the name again. While paused there is no countdown at all.
   function pokeUI(force = false) {
     const now = Date.now()
     if (!force && !uiFadedRef.current && now - lastPokeRef.current < 120) return // throttle touchmove/mousemove floods
@@ -296,23 +305,15 @@ export default function WorkoutVideoLibrary({ onClose }) {
     uiFadedRef.current = false
     setUiFaded(false)
     clearTimeout(uiTimerRef.current)
+    if (!playingRef.current) return
     uiTimerRef.current = setTimeout(() => { uiFadedRef.current = true; setUiFaded(true) }, UI_FADE_MS)
   }
 
-  // Pointer-down anywhere in the player: remember if this tap is only
-  // revealing dimmed UI, unlock rest-beep audio (needs a user gesture), and
-  // restart the fade timer.
+  // Pointer-down anywhere in the player: unlock rest-beep audio (browsers
+  // need a user gesture for that) and restart the hide timer.
   function handleActivityStart() {
-    tapRevealedRef.current = uiFadedRef.current
     restBeeper.unlock()
     pokeUI(true)
-  }
-
-  // True (once) when the tap that triggered this click only revealed dimmed UI.
-  function consumeRevealTap() {
-    if (!tapRevealedRef.current) return false
-    tapRevealedRef.current = false
-    return true
   }
 
   // Rest cut short or abandoned (skip, prev/next, jump, category change) —
@@ -502,6 +503,18 @@ export default function WorkoutVideoLibrary({ onClose }) {
     setIndex((i) => i + 1)
   }
 
+  // Tapped an exercise in the checklist sheet: go to that exact exercise and
+  // start its video straight away (the dots / prev / next only jump, paused).
+  function playExerciseFromList(i) {
+    cancelRest()
+    setListOpen(false)
+    setPhase('exercise')
+    setVariantIndex(0)
+    setIndex(i)
+    setPlaying(true)
+    setShowControls(true)
+  }
+
   // Top-bar category chips: jump straight to another category mid-workout.
   // Everything completed so far stays in the same session.
   function pickGroup(key) {
@@ -523,7 +536,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
       onTouchMove={() => pokeUI()}
       onMouseMove={() => pokeUI()}
       onWheel={() => pokeUI()}
-      onKeyDown={() => { tapRevealedRef.current = false; pokeUI(true) }}
+      onKeyDown={() => pokeUI(true)}
     >
       {logSheetOpen && currentGroup && (
         <ExerciseLogSheet
@@ -534,6 +547,24 @@ export default function WorkoutVideoLibrary({ onClose }) {
           onSkip={finishComplete}
           onClose={() => setLogSheetOpen(false)}
         />
+      )}
+
+      {listOpen && phase === 'exercise' && (
+        <ExerciseListSheet
+          title={MUSCLE_GROUPS.find((g) => g.key === group)?.label || 'Workouts'}
+          items={exerciseGroups.map((g) => ({
+            name: g.name,
+            done: completed.has(doneKey(group, g.name)),
+            summary: loggedSummary(session.current?.entries.get(doneKey(group, g.name))),
+          }))}
+          currentIndex={index}
+          onPick={playExerciseFromList}
+          onClose={() => setListOpen(false)}
+        />
+      )}
+
+      {notesOpen && phase === 'exercise' && hasNotes && (
+        <NotesModal name={current.name} notes={current.description} onClose={() => setNotesOpen(false)} />
       )}
 
       {closePromptOpen && (
@@ -552,18 +583,11 @@ export default function WorkoutVideoLibrary({ onClose }) {
           gradient scrim so it stays legible over any footage. */}
       <div
         className="absolute top-0 inset-x-0 z-20 flex flex-col gap-2.5 px-4 pb-6"
-        style={{ paddingTop: 'calc(10px + env(safe-area-inset-top, 0px))' }}
+        style={{
+          paddingTop: 'calc(10px + env(safe-area-inset-top, 0px))',
+          background: 'linear-gradient(to bottom, rgba(0,0,0,0.75), transparent)',
+        }}
       >
-        {/* Legibility scrim — eases off together with the chips when idle */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            zIndex: -1,
-            background: 'linear-gradient(to bottom, rgba(0,0,0,0.75), transparent)',
-            opacity: uiFaded ? CHIPS_FADED_OPACITY : 1,
-            transition: 'opacity 0.6s ease',
-          }}
-        />
         <div className="flex items-center justify-between">
           <button
             onClick={requestClose}
@@ -581,7 +605,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
         </div>
         <div
           className="flex gap-2 px-1 -mx-1 overflow-x-auto"
-          style={{ scrollbarWidth: 'none', opacity: uiFaded ? CHIPS_FADED_OPACITY : 1, transition: 'opacity 0.6s ease' }}
+          style={{ scrollbarWidth: 'none' }}
           onScroll={() => pokeUI()}
         >
           {MUSCLE_GROUPS.map((g) => {
@@ -589,7 +613,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
             return (
               <button
                 key={g.key}
-                onClick={() => { if (consumeRevealTap()) return; pickGroup(g.key) }}
+                onClick={() => pickGroup(g.key)}
                 className="px-3.5 py-1.5 text-xs font-semibold rounded-full whitespace-nowrap transition-all shrink-0"
                 style={active
                   ? { background: S.accent, color: '#0D0D0D' }
@@ -679,13 +703,18 @@ export default function WorkoutVideoLibrary({ onClose }) {
                 exercise screen. */}
             {phase === 'exercise' && (
               <div
-                className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-2 px-5 pt-10 pb-4 pointer-events-none"
+                className="absolute inset-x-0 bottom-0 z-10 flex flex-col px-5 pt-10 pointer-events-none"
                 style={{
+                  // 2px between the name row and the PR row; 4px above the action bar.
+                  gap: 2,
+                  paddingBottom: 4,
                   background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)',
+                  // Dims to 60% 3 s into playback (see UI_FADE_MS) — name, timer, PR and icons together.
                   opacity: uiFaded ? INFO_FADED_OPACITY : 1,
                   transition: 'opacity 0.6s ease',
                 }}
               >
+                {/* Name row — name, then the video-time ring, then Swap; ✓ Done on the right */}
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <h2 className="text-lg font-bold leading-snug" style={{ color: '#fff' }}>{current.name}</h2>
@@ -694,7 +723,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
                     )}
                     {currentGroup?.variants.length > 1 && (
                       <button
-                        onClick={() => { if (consumeRevealTap()) return; swapVariant() }}
+                        onClick={swapVariant}
                         className="pointer-events-auto text-[11px] font-bold px-2.5 py-1 rounded-full transition-all active:scale-95"
                         style={{ background: 'rgba(168,85,247,0.25)', color: '#fff', backdropFilter: 'blur(4px)' }}
                         aria-label="Switch to the other video for this exercise"
@@ -712,17 +741,24 @@ export default function WorkoutVideoLibrary({ onClose }) {
                     </span>
                   )}
                 </div>
-                {currentPR && (
-                  <span
-                    className="self-start flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full"
-                    style={{ background: 'rgba(168,85,247,0.25)', color: '#fff', border: '1px solid rgba(168,85,247,0.45)', backdropFilter: 'blur(4px)' }}
-                  >
-                    🏆 PR {formatBestPR(currentPR)}
-                  </span>
-                )}
-                {current.description && (
-                  <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.75)' }}>{current.description}</p>
-                )}
+
+                {/* PR row — PR on the left; list icon then ⚠ icon at the right end.
+                    Each icon is 24px art in a 28px touch area; with a 1px gap that's
+                    5px between the two pieces of artwork. */}
+                <div className="flex items-center gap-2">
+                  {currentPR && (
+                    <span
+                      className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full"
+                      style={{ background: 'rgba(168,85,247,0.25)', color: '#fff', border: '1px solid rgba(168,85,247,0.45)', backdropFilter: 'blur(4px)' }}
+                    >
+                      🏆 PR {formatBestPR(currentPR)}
+                    </span>
+                  )}
+                  <div className="flex items-center ml-auto" style={{ gap: 1 }}>
+                    <IconButton label="Show workouts in this category" icon={checklistIcon} onClick={() => setListOpen(true)} />
+                    {hasNotes && <IconButton label="Exercise notes and warnings" icon={warningIcon} onClick={() => setNotesOpen(true)} />}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -979,6 +1015,135 @@ function PillField({ label, value, onChange, pills, inputProps, fieldStyle }) {
 // Small badge next to the exercise name: a semi-transparent circle with a
 // thin purple ring that depletes from full to empty in step with the
 // live countdown (remaining/total), plus the seconds-left number inside.
+/** "3 × 8 · 70 kg" for an exercise that was logged in this sitting. */
+function loggedSummary(entry) {
+  if (!entry) return ''
+  const parts = []
+  if (entry.sets && entry.reps) parts.push(`${entry.sets} × ${entry.reps}`)
+  else if (entry.reps) parts.push(`${entry.reps} reps`)
+  else if (entry.sets) parts.push(`${entry.sets} sets`)
+  if (entry.weight) parts.push(`${entry.weight} kg`)
+  return parts.join(' · ')
+}
+
+/**
+ * Every exercise in the current category, with ✓ on the ones completed this
+ * sitting (and what was logged). Tapping one plays that exercise.
+ */
+function ExerciseListSheet({ title, items, currentIndex, onPick, onClose }) {
+  const currentRef = useRef(null)
+  const doneCount = items.filter((i) => i.done).length
+  // Open scrolled to the exercise that's playing.
+  useEffect(() => { currentRef.current?.scrollIntoView?.({ block: 'center' }) }, [])
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-end justify-center" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div
+        role="dialog" aria-modal="true" aria-label={`${title} workouts`}
+        className="flex flex-col w-full max-w-md animate-fade-up rounded-t-2xl"
+        style={{
+          background: 'var(--color-surface)', border: `1px solid ${S.border}`, borderBottom: 'none',
+          maxHeight: '75vh', paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-3 shrink-0" style={{ borderBottom: `1px solid ${S.border}` }}>
+          <div className="min-w-0">
+            <h3 className="text-base font-bold truncate" style={{ color: S.primary }}>{title} workouts</h3>
+            <p className="text-xs" style={{ color: S.secondary }}>{doneCount} of {items.length} done</p>
+          </div>
+          <button onClick={onClose} aria-label="Close list"
+            className="flex items-center justify-center w-8 h-8 rounded-full shrink-0" style={{ background: S.surface2, color: S.primary }}>
+            <CloseIcon />
+          </button>
+        </div>
+
+        <ul className="py-1 overflow-y-auto">
+          {items.map((it, i) => {
+            const isCurrent = i === currentIndex
+            return (
+              <li key={it.name}>
+                <button
+                  ref={isCurrent ? currentRef : null}
+                  onClick={() => onPick(i)}
+                  aria-current={isCurrent ? 'true' : undefined}
+                  className="flex items-center w-full gap-3 px-5 py-3 text-left transition-colors active:opacity-70"
+                  style={{ background: isCurrent ? 'rgba(200,241,53,0.07)' : 'transparent' }}
+                >
+                  <span
+                    className="flex items-center justify-center text-xs font-bold rounded-full w-7 h-7 shrink-0"
+                    style={it.done
+                      ? { background: S.accent, color: '#0D0D0D' }
+                      : { border: `1.5px solid ${isCurrent ? S.accent : S.border}`, color: isCurrent ? S.accent : S.secondary }}
+                    aria-hidden="true"
+                  >
+                    {it.done ? '✓' : i + 1}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold truncate" style={{ color: S.primary }}>{it.name}</span>
+                    {it.summary && <span className="block text-xs" style={{ color: S.secondary }}>{it.summary}</span>}
+                  </span>
+                  {isCurrent
+                    ? <span className="text-[11px] font-bold shrink-0" style={{ color: S.accent }}>Now playing</span>
+                    : it.done && <span className="text-[11px] font-bold shrink-0" style={{ color: S.accent }}>Done</span>}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Bare icon button for the info block: transparent (no background, no outline),
+ * 24px artwork in a 28px touch area, with a soft shadow so it stays legible
+ * over bright footage. Used for both the checklist and ⚠ icons.
+ */
+function IconButton({ label, icon, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      className="flex items-center justify-center transition-transform rounded-full pointer-events-auto active:scale-90"
+      style={{ width: 28, height: 28 }}
+    >
+      <img src={icon} alt="" width="20" height="20" draggable="false" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))' }} />
+    </button>
+  )
+}
+
+/** The exercise's notes / warnings, opened from the ⚠ icon. */
+function NotesModal({ name, notes, onClose }) {
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center px-5" style={{ background: 'rgba(0,0,0,0.75)' }} onClick={onClose}>
+      <div
+        role="dialog" aria-modal="true" aria-label="Exercise notes and warnings"
+        className="w-full max-w-sm p-5 rounded-2xl animate-fade-up"
+        style={{ background: 'var(--color-surface)', border: `1px solid ${S.border}` }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3">
+          <img src={warningIcon} alt="" width="28" height="28" />
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold tracking-wider uppercase" style={{ color: 'orangered' }}>Notes &amp; warnings</p>
+            <h3 className="text-base font-bold truncate" style={{ color: S.primary }}>{name}</h3>
+          </div>
+        </div>
+        <p className="mt-3 text-sm leading-relaxed whitespace-pre-wrap" style={{ color: S.secondary }}>{notes}</p>
+        <button
+          onClick={onClose}
+          className="w-full py-3 mt-5 text-sm font-bold rounded-xl"
+          style={{ background: S.accent, color: '#0D0D0D' }}
+        >
+          Got it
+        </button>
+      </div>
+    </div>
+  )
+}
+
 const DURATION_RING_RADIUS = 15
 const DURATION_RING_CIRCUMFERENCE = 2 * Math.PI * DURATION_RING_RADIUS
 const DURATION_RING_TRACK_COLOR = 'rgba(168,85,247,0.25)'

@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { isNetworkError } from '../lib/offline'
 import { normalizeAxiosError } from '../lib/errors'
+import { noteServerVersion } from '../lib/serverVersion'
 
 const BASE = import.meta.env.VITE_API_URL || '/api'
 
@@ -12,6 +13,13 @@ api.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
+
+// Report the server's boot-version header (success AND error responses) so
+// UpdateChecker can spot a server redeploy without polling for it.
+api.interceptors.response.use(
+  (res) => { noteServerVersion(res.headers); return res },
+  (err) => { noteServerVersion(err.response?.headers); return Promise.reject(err) }
+)
 
 // Silent token refresh on 401
 let refreshing = false

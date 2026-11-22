@@ -16,7 +16,7 @@ export default function VideosFab() {
   return (
     // Fixed wrapper is clamped to the same max-w-md column as the app so the
     // button hugs the app's right edge on wide screens, not the browser's.
-    <div className="fixed left-1/2 z-30 flex justify-end w-full max-w-md px-4 -translate-x-1/2 pointer-events-none"
+    <div className="fixed z-30 flex justify-end w-full max-w-md px-4 -translate-x-1/2 pointer-events-none left-1/2"
       style={{ bottom: `calc(${bannerUp ? 232 : 84}px + env(safe-area-inset-bottom, 0px))` }}>
       <button
         type="button"

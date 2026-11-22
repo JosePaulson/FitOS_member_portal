@@ -9,9 +9,28 @@
 //   - Bug fixes / small tweaks / copy changes        → bump PATCH (last number)
 //
 // Changelog entries: newest first; `type` is 'feature' | 'improvement' | 'fix'.
-export const APP_VERSION = '2.2.0'
+export const APP_VERSION = '2.3.1'
 
 export const APP_CHANGELOG = [
+  {
+    version: '2.3.1',
+    type: 'improvement',
+    notes: [
+      'Workout videos: while a video plays, the exercise name, timer, PR and icons now dim to 60% after 3 seconds instead of hiding — they return to normal when you pause or touch the screen',
+      'The video timer is back next to the exercise name, and the workout-list and ⚠ icons now sit together at the right end of the PR row',
+    ],
+  },
+  {
+    version: '2.3.0',
+    type: 'feature',
+    notes: [
+      'Workout videos: tap the orange ⚠ icon next to an exercise to read its notes and warnings — they no longer sit under the video',
+      'Workout videos: tap the new checklist icon (bottom-right of the video) to see every workout in the category with what you have completed — tap any workout to play it right away',
+      'While a video plays, the exercise name hides after 3 seconds so it never covers your form, leaving just your PR, the video timer and the ⚠ icon at the bottom — touch the screen or pause to bring everything back',
+      'The category pills now always stay fully visible, and the name and PR sit closer together',
+      'The app now makes far fewer background requests, so it is lighter on your data and battery and stays fast at busy times',
+    ],
+  },
   {
     version: '2.2.0',
     type: 'feature',
