@@ -745,7 +745,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
                 {/* PR row — PR on the left; list icon then ⚠ icon at the right end.
                     Each icon is 24px art in a 28px touch area; with a 1px gap that's
                     5px between the two pieces of artwork. */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mb-2">
                   {currentPR && (
                     <span
                       className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full"
@@ -754,7 +754,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
                       🏆 PR {formatBestPR(currentPR)}
                     </span>
                   )}
-                  <div className="flex items-center ml-auto" style={{ gap: 1 }}>
+                  <div className="flex items-center ml-auto" style={{ gap: 4 }}>
                     <IconButton label="Show workouts in this category" icon={checklistIcon} onClick={() => setListOpen(true)} />
                     {hasNotes && <IconButton label="Exercise notes and warnings" icon={warningIcon} onClick={() => setNotesOpen(true)} />}
                   </div>
@@ -1107,9 +1107,9 @@ function IconButton({ label, icon, onClick }) {
       onClick={onClick}
       aria-label={label}
       className="flex items-center justify-center transition-transform rounded-full pointer-events-auto active:scale-90"
-      style={{ width: 28, height: 28 }}
+      style={{ width: 32, height: 32 }}
     >
-      <img src={icon} alt="" width="20" height="20" draggable="false" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))' }} />
+      <img src={icon} alt="" width="24" height="24" draggable="false" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))' }} />
     </button>
   )
 }
