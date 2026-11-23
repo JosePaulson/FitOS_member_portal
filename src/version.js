@@ -9,9 +9,31 @@
 //   - Bug fixes / small tweaks / copy changes        → bump PATCH (last number)
 //
 // Changelog entries: newest first; `type` is 'feature' | 'improvement' | 'fix'.
-export const APP_VERSION = '2.3.1'
+export const APP_VERSION = '2.4.1'
 
 export const APP_CHANGELOG = [
+  {
+    version: '2.4.1',
+    type: 'improvement',
+    notes: [
+      'Workout videos: the category name shown when you swipe into a new category is now larger and bolder, and fades out more slowly',
+    ],
+  },
+  {
+    version: '2.4.0',
+    type: 'feature',
+    notes: [
+      'Workout videos: swipe left or right over the video to jump to the next or previous exercise',
+      'Swiping past the last (or first) exercise of a category moves on to the next (or previous) category, and its name appears briefly above the play button',
+    ],
+  },
+  {
+    version: '2.3.2',
+    type: 'improvement',
+    notes: [
+      'Workout videos: the exercise name, timer and PR / Done pills are now a little smaller, and the workout-list and ⚠ icons match the PR pill’s size, with a larger invisible tap area so they are easy to hit',
+    ],
+  },
   {
     version: '2.3.1',
     type: 'improvement',

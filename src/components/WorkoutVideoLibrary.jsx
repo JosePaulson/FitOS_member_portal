@@ -24,6 +24,36 @@ const CONTROLS_HIDE_MS = 1000
 const UI_FADE_MS = 3000
 const INFO_FADED_OPACITY = 0.6
 
+// Sizes of the info block (name, timer, pills, icons). Every one is derived from
+// ONE scale so they keep their proportions to each other — change INFO_SCALE to
+// make the whole block bigger or smaller. The base numbers are the original
+// (scale 1) sizes. The ⚠ and list icons are drawn at exactly the pill height.
+const INFO_SCALE = 0.88
+const sc = (n) => Math.round(n * INFO_SCALE * 100) / 100
+const INFO = {
+  nameFont: sc(18),     // exercise name
+  ring: sc(34),         // video-time ring
+  pillFont: sc(11),     // PR / ✓ Done / Swap text
+  pillH: sc(26.5),      // PR and ✓ Done pill height (11px text × 1.5 line + 8px padding + 2px border)
+  swapH: sc(24.5),      // Swap has no border, so it has always been 2px shorter
+  pillPadX: sc(10),
+  pillInnerGap: sc(4),  // between 🏆 / ✓ and the text
+  gap: sc(8),           // between the name, ring and Swap
+}
+const ICON_ART = INFO.pillH   // list / ⚠ artwork = the PR pill's height
+const ICON_HIT = 32           // invisible square around each icon, for easy tapping
+const ICON_SQUARE_GAP = 4     // space between the two tap squares → ~12.7px between the two icons' artwork
+
+// Horizontal swipe over the video = previous / next exercise.
+const SWIPE_MIN_PX = 50            // how far the finger must travel sideways…
+const SWIPE_DIRECTNESS = 1.5       // …and sideways must beat vertical by this factor
+const SWIPE_VERTICAL_CANCEL_PX = 30 // a clearly vertical drag is never a swipe
+const SWIPE_TAP_GUARD_MS = 400     // ignore the tap-to-pause click that can trail a swipe
+
+// "Chest" / "Shoulders" label shown when a swipe crosses into another category.
+const CATEGORY_TOAST_MS = 2600     // fades out over this long, then it's removed
+const PLAY_BUTTON_PX = 56          // the centred play/pause circle (w-14 h-14) the label sits above
+
 function clampRestDuration(value) {
   return Math.min(REST_MAX_SECONDS, Math.max(REST_MIN_SECONDS, value))
 }
@@ -173,6 +203,12 @@ export default function WorkoutVideoLibrary({ onClose }) {
   const playingRef = useRef(false) // mirrors `playing && phase === 'exercise'` for the timer callbacks
   const [notesOpen, setNotesOpen] = useState(false)
   const [listOpen, setListOpen] = useState(false) // "workouts in this category" sheet
+  const [categoryToast, setCategoryToast] = useState(null) // { id, name } while the category label is showing
+  const swipeRef = useRef({ x: 0, y: 0, active: false, fired: false })
+  const lastSwipeAtRef = useRef(0)
+  // Set just before a swipe changes category so the group-change effect knows
+  // which exercise to land on and that the new video should start playing.
+  const swipeLandRef = useRef(null) // 'first' | 'last' | null
   const restEndsAtRef = useRef(0) // wall-clock end of the current rest — immune to background timer throttling
 
   // Buffering state for the current clip, and a live countdown of seconds
@@ -220,16 +256,21 @@ export default function WorkoutVideoLibrary({ onClose }) {
   const hasNotes = !!current?.description?.trim() // notes/warnings live behind the ⚠ icon
 
   // Reset to the first exercise (and first variant) whenever the muscle
-  // group changes.
+  // group changes — except when a swipe crossed the category boundary: then
+  // swiping forward lands on the new category's first exercise, swiping back
+  // on its LAST, and the video starts playing.
   useEffect(() => {
-    setIndex(0)
+    const land = swipeLandRef.current
+    swipeLandRef.current = null
+    setIndex(land === 'last' ? Math.max(0, exerciseGroups.length - 1) : 0)
     setVariantIndex(0)
     setPhase('exercise')
-    setPlaying(false)
+    setPlaying(land != null)
     setShowControls(true)
     setLogSheetOpen(false)
     cancelRest()
     clearHideTimer()
+    if (land != null) armHideTimer()
   }, [group])
 
   function swapVariant() {
@@ -330,6 +371,7 @@ export default function WorkoutVideoLibrary({ onClose }) {
   // faded out.
   function handlePlayerTap() {
     if (phase !== 'exercise') return
+    if (Date.now() - lastSwipeAtRef.current < SWIPE_TAP_GUARD_MS) return // a swipe's tail, not a tap
     setShowControls(true)
     setPlaying((p) => {
       const next = !p
@@ -338,6 +380,51 @@ export default function WorkoutVideoLibrary({ onClose }) {
       return next
     })
   }
+
+  // ── Swipe between exercises ─────────────────────────────────────────────
+  // Finger moves right→left = next video, left→right = previous (like a
+  // carousel). Past the first/last exercise it continues into the
+  // neighbouring category that has videos, and names it on screen briefly.
+  function swipeTo(dir) {
+    if (phase !== 'exercise' || !current) return
+    const hasNeighbour = dir > 0 ? !isLast : index > 0
+    if (hasNeighbour) {
+      cancelRest()
+      setVariantIndex(0)
+      setIndex((i) => i + dir)
+      setPlaying(true)
+      setShowControls(true)
+      armHideTimer()
+      return
+    }
+    const keys = MUSCLE_GROUPS.filter((g) => (videosByCategory[g.key] || []).length > 0).map((g) => g.key)
+    const nextKey = keys[keys.indexOf(group) + dir]
+    if (!nextKey) return // already at the very first / last category
+    swipeLandRef.current = dir > 0 ? 'first' : 'last'
+    setCategoryToast({ id: Date.now(), name: labelFor(nextKey) })
+    setGroup(nextKey)
+  }
+
+  function handleSwipeStart(e) {
+    const one = e.touches?.length === 1
+    swipeRef.current = { x: one ? e.touches[0].clientX : 0, y: one ? e.touches[0].clientY : 0, active: one && phase === 'exercise', fired: false }
+  }
+
+  // Fires as soon as the finger has clearly travelled sideways (not on release).
+  function handleSwipeMove(e) {
+    const s = swipeRef.current
+    if (!s.active || s.fired || e.touches?.length !== 1) return
+    const dx = e.touches[0].clientX - s.x
+    const dy = e.touches[0].clientY - s.y
+    if (Math.abs(dy) > SWIPE_VERTICAL_CANCEL_PX && Math.abs(dy) > Math.abs(dx)) { s.active = false; return }
+    if (Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy) * SWIPE_DIRECTNESS) {
+      s.fired = true
+      lastSwipeAtRef.current = Date.now()
+      swipeTo(dx < 0 ? 1 : -1)
+    }
+  }
+
+  function handleSwipeEnd() { swipeRef.current.active = false }
 
   // Rest countdown. Driven by an END TIMESTAMP rather than by counting
   // ticks, so it stays right when the browser throttles timers in a background
@@ -627,7 +714,14 @@ export default function WorkoutVideoLibrary({ onClose }) {
       </div>
 
       {/* Full-bleed video area */}
-      <div className="relative flex-1 min-h-0 bg-black">
+      <div
+        className="relative flex-1 min-h-0 bg-black"
+        style={{ touchAction: 'pan-y' }}
+        onTouchStart={handleSwipeStart}
+        onTouchMove={handleSwipeMove}
+        onTouchEnd={handleSwipeEnd}
+        onTouchCancel={handleSwipeEnd}
+      >
         {catalogLoading || videosLoading ? (
           <div className="flex items-center justify-center w-full h-full">
             <span className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(255,255,255,0.2)', borderTopColor: '#fff' }} />
@@ -698,6 +792,11 @@ export default function WorkoutVideoLibrary({ onClose }) {
               </button>
             )}
 
+            {/* Category name after a swipe crosses into another category */}
+            {categoryToast && phase === 'exercise' && (
+              <CategoryToast key={categoryToast.id} name={categoryToast.name} onDone={() => setCategoryToast(null)} />
+            )}
+
             {/* Bottom info scrim — exercise name + optional clip length/cue,
                 floating over the video like the player chip in Cult's
                 exercise screen. */}
@@ -716,16 +815,19 @@ export default function WorkoutVideoLibrary({ onClose }) {
               >
                 {/* Name row — name, then the video-time ring, then Swap; ✓ Done on the right */}
                 <div className="flex items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <h2 className="text-lg font-bold leading-snug" style={{ color: '#fff' }}>{current.name}</h2>
+                  <div className="flex flex-wrap items-center" style={{ columnGap: INFO.gap, rowGap: sc(4) }}>
+                    <h2 className="font-bold" style={{ color: '#fff', fontSize: INFO.nameFont, lineHeight: 1.375 }}>{current.name}</h2>
                     {remainingSec != null && videoDuration != null && (
-                      <DurationRing remaining={remainingSec} total={videoDuration} />
+                      <DurationRing remaining={remainingSec} total={videoDuration} size={INFO.ring} />
                     )}
                     {currentGroup?.variants.length > 1 && (
                       <button
                         onClick={swapVariant}
-                        className="pointer-events-auto text-[11px] font-bold px-2.5 py-1 rounded-full transition-all active:scale-95"
-                        style={{ background: 'rgba(168,85,247,0.25)', color: '#fff', backdropFilter: 'blur(4px)' }}
+                        className="flex items-center font-bold transition-all rounded-full pointer-events-auto active:scale-95"
+                        style={{
+                          height: INFO.swapH, padding: `0 ${INFO.pillPadX}px`, fontSize: INFO.pillFont, lineHeight: 1,
+                          background: 'rgba(168,85,247,0.25)', color: '#fff', backdropFilter: 'blur(4px)',
+                        }}
                         aria-label="Switch to the other video for this exercise"
                       >
                         ⇄ Swap
@@ -734,29 +836,42 @@ export default function WorkoutVideoLibrary({ onClose }) {
                   </div>
                   {completed.has(doneKey(group, currentGroup?.name)) && (
                     <span
-                      className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full"
-                      style={{ background: 'rgba(200,241,53,0.18)', color: S.accent, border: '1px solid rgba(200,241,53,0.3)' }}
+                      className="flex items-center font-bold rounded-full shrink-0"
+                      style={{
+                        height: INFO.pillH, padding: `0 ${INFO.pillPadX}px`, fontSize: INFO.pillFont, lineHeight: 1, gap: INFO.pillInnerGap,
+                        background: 'rgba(200,241,53,0.18)', color: S.accent, border: '1px solid rgba(200,241,53,0.3)',
+                      }}
                     >
                       ✓ Done
                     </span>
                   )}
                 </div>
 
-                {/* PR row — PR on the left; list icon then ⚠ icon at the right end.
-                    Each icon is 24px art in a 28px touch area; with a 1px gap that's
-                    5px between the two pieces of artwork. */}
+                {/* PR row — PR on the left; list icon then ⚠ icon at the right end,
+                    their 32px tap squares ICON_SQUARE_GAP (4px) apart. Icon artwork
+                    is the PR pill's height. `mb-2` (8px) lifts the whole block off
+                    the action bar. */}
                 <div className="flex items-center gap-2 mb-2">
                   {currentPR && (
                     <span
-                      className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full"
-                      style={{ background: 'rgba(168,85,247,0.25)', color: '#fff', border: '1px solid rgba(168,85,247,0.45)', backdropFilter: 'blur(4px)' }}
+                      className="flex items-center font-bold rounded-full"
+                      style={{
+                        height: INFO.pillH, padding: `0 ${INFO.pillPadX}px`, fontSize: INFO.pillFont, lineHeight: 1, gap: INFO.pillInnerGap,
+                        background: 'rgba(168,85,247,0.25)', color: '#fff', border: '1px solid rgba(168,85,247,0.45)', backdropFilter: 'blur(4px)',
+                      }}
                     >
                       🏆 PR {formatBestPR(currentPR)}
                     </span>
                   )}
-                  <div className="flex items-center ml-auto" style={{ gap: 4 }}>
+                  {/* marginRight pulls the artwork flush with the content edge (the invisible tap square overhangs it) */}
+                  <div className="flex items-center ml-auto" style={{ marginRight: -(ICON_HIT - ICON_ART) / 2 }}>
                     <IconButton label="Show workouts in this category" icon={checklistIcon} onClick={() => setListOpen(true)} />
-                    {hasNotes && <IconButton label="Exercise notes and warnings" icon={warningIcon} onClick={() => setNotesOpen(true)} />}
+                    {hasNotes && (
+                      <IconButton
+                        label="Exercise notes and warnings" icon={warningIcon} onClick={() => setNotesOpen(true)}
+                        gapLeft={ICON_SQUARE_GAP}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
@@ -1015,6 +1130,41 @@ function PillField({ label, value, onChange, pills, inputProps, fieldStyle }) {
 // Small badge next to the exercise name: a semi-transparent circle with a
 // thin purple ring that depletes from full to empty in step with the
 // live countdown (remaining/total), plus the seconds-left number inside.
+/**
+ * The new category's name, big and bold, 2rem above the play/pause button:
+ * off-white text (text-4xl, extra-bold) starting at 60% opacity and fading to
+ * 0% over CATEGORY_TOAST_MS, then it removes itself. Crisp — no blur or glow.
+ */
+function CategoryToast({ name, onDone }) {
+  const [fading, setFading] = useState(false)
+  useEffect(() => {
+    // Two frames so the 60% start state is painted before the transition begins.
+    const raf = requestAnimationFrame(() => requestAnimationFrame(() => setFading(true)))
+    const done = setTimeout(onDone, CATEGORY_TOAST_MS)
+    return () => { cancelAnimationFrame(raf); clearTimeout(done) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  return (
+    <div
+      aria-live="polite"
+      className="absolute inset-x-0 z-10 flex justify-center pointer-events-none"
+      // bottom edge = the play/pause circle's top edge (50% + half its height) + 2rem
+      style={{ bottom: `calc(50% + ${PLAY_BUTTON_PX / 2}px + 2rem)` }}
+    >
+      <span
+        className="text-4xl font-extrabold tracking-wide"
+        style={{
+          color: '#F4F1E8', // off-white
+          opacity: fading ? 0 : 0.6,
+          transition: `opacity ${CATEGORY_TOAST_MS}ms ease-out`,
+        }}
+      >
+        {name}
+      </span>
+    </div>
+  )
+}
+
 /** "3 × 8 · 70 kg" for an exercise that was logged in this sitting. */
 function loggedSummary(entry) {
   if (!entry) return ''
@@ -1097,19 +1247,27 @@ function ExerciseListSheet({ title, items, currentIndex, onPick, onClose }) {
 }
 
 /**
- * Bare icon button for the info block: transparent (no background, no outline),
- * 24px artwork in a 28px touch area, with a soft shadow so it stays legible
- * over bright footage. Used for both the checklist and ⚠ icons.
+ * Icon for the info block (list / ⚠). The artwork is drawn at the PR pill's
+ * height; around it sits an INVISIBLE ICON_HIT-px square that is the tap
+ * target — no background, no highlight flash, no focus ring. The square is
+ * taller than the row, so negative vertical margins keep the row exactly
+ * pill-height; `gapLeft` is the space before this icon's square.
  */
-function IconButton({ label, icon, onClick }) {
+function IconButton({ label, icon, onClick, gapLeft = 0 }) {
+  const overhang = (ICON_HIT - ICON_ART) / 2
   return (
     <button
       onClick={onClick}
       aria-label={label}
-      className="flex items-center justify-center transition-transform rounded-full pointer-events-auto active:scale-90"
-      style={{ width: 32, height: 32 }}
+      className="flex items-center justify-center transition-transform pointer-events-auto active:scale-90"
+      style={{
+        width: ICON_HIT, height: ICON_HIT, padding: 0,
+        marginTop: -overhang, marginBottom: -overhang, marginLeft: gapLeft, marginRight: 0,
+        background: 'transparent', border: 'none', outline: 'none',
+        WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
+      }}
     >
-      <img src={icon} alt="" width="24" height="24" draggable="false" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))' }} />
+      <img src={icon} alt="" width={ICON_ART} height={ICON_ART} draggable="false" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))' }} />
     </button>
   )
 }
@@ -1149,13 +1307,13 @@ const DURATION_RING_CIRCUMFERENCE = 2 * Math.PI * DURATION_RING_RADIUS
 const DURATION_RING_TRACK_COLOR = 'rgba(168,85,247,0.25)'
 const DURATION_RING_COLOR = 'rgba(168,85,247,0.85)'
 
-function DurationRing({ remaining, total }) {
+function DurationRing({ remaining, total, size = 34 }) {
   const progress = total > 0 ? Math.max(0, Math.min(1, remaining / total)) : 0
   const offset = DURATION_RING_CIRCUMFERENCE * (1 - progress)
 
   return (
-    <span className="relative flex items-center justify-center shrink-0" style={{ width: 34, height: 34 }}>
-      <svg viewBox="0 0 36 36" width="34" height="34" className="absolute inset-0 -rotate-90">
+    <span className="relative flex items-center justify-center shrink-0" style={{ width: size, height: size }}>
+      <svg viewBox="0 0 36 36" width={size} height={size} className="absolute inset-0 -rotate-90">
         <circle cx="18" cy="18" r="17" fill="rgba(0,0,0,0.3)" />
         <circle cx="18" cy="18" r={DURATION_RING_RADIUS} fill="none" stroke={DURATION_RING_TRACK_COLOR} strokeWidth="1.5" />
         <circle
@@ -1164,7 +1322,7 @@ function DurationRing({ remaining, total }) {
           style={{ transition: 'stroke-dashoffset 1s linear' }}
         />
       </svg>
-      <span className="text-[10px] font-bold" style={{ color: '#fff' }}>{remaining}</span>
+      <span className="font-bold" style={{ color: '#fff', fontSize: (size * 10) / 34 }}>{remaining}</span>
     </span>
   )
 }
